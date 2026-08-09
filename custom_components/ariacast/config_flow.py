@@ -33,7 +33,7 @@ class AriaCastConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> "AriaCastOptionsFlow":
-        return AriaCastOptionsFlow(config_entry)
+        return AriaCastOptionsFlow()
 
 
 class AriaCastOptionsFlow(config_entries.OptionsFlow):
