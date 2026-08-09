@@ -20,7 +20,7 @@ ENV ARIACAST_WEB_PORT=8099
 EXPOSE 8099/tcp
 EXPOSE 12888/udp
 
-COPY addon/ariacast_core/run.sh /run.sh
+COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 
 CMD ["/run.sh"]
