@@ -142,6 +142,12 @@ class DatabaseService:
         row = await cur.fetchone()
         return Room(**dict(row)) if row else None
 
+    async def get_room_by_ha_area_id(self, ha_area_id: str) -> Optional[Room]:
+        assert self._db is not None
+        cur = await self._db.execute("SELECT * FROM rooms WHERE ha_area_id = ?", (ha_area_id,))
+        row = await cur.fetchone()
+        return Room(**dict(row)) if row else None
+
     async def list_rooms(self) -> list[Room]:
         assert self._db is not None
         cur = await self._db.execute("SELECT * FROM rooms ORDER BY name")
@@ -277,6 +283,12 @@ class DatabaseService:
         await self._db.commit()
         await self._emit("lights", "upsert", light.__dict__)
         return light
+
+    async def get_light_by_ha_entity_id(self, ha_entity_id: str) -> Optional[Light]:
+        assert self._db is not None
+        cur = await self._db.execute("SELECT * FROM lights WHERE ha_entity_id = ?", (ha_entity_id,))
+        row = await cur.fetchone()
+        return Light(**dict(row)) if row else None
 
     async def list_lights(self, room_id: Optional[str] = None) -> list[Light]:
         assert self._db is not None

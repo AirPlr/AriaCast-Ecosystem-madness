@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/with-contenv sh
 set -e
 
 CONFIG_PATH=/data/options.json

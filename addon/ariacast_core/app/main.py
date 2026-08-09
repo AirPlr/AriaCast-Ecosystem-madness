@@ -22,7 +22,7 @@ try:
     from ariacast_core.database import DatabaseService
     from ariacast_core.dsp import RoomSpatialAudioDSP
     from ariacast_core.hue_sync import AlbumArtHueSync
-    from ariacast_core.models import Light, Room, Speaker
+    from ariacast_core.models import Light, Room, Speaker, SpeakerStatus
     from ariacast_core.node_manager import SpeakerNodeManager
     from ariacast_core.pubsub import PubSubServer
 
@@ -47,23 +47,39 @@ WWW_DIR = Path(__file__).parent / "www"
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HA_TOKEN")
 HA_API_BASE = os.environ.get("HA_API_BASE", "http://supervisor/core/api")
 
+# The LAN-reachable base URL for *this* add-on, i.e. what a bridged HA
+# media_player (Sonos/Cast/Alexa/etc.) should fetch /stream/<room>.wav from.
+# Supervisor-mode doesn't need this (no HA-bridged speakers without
+# HA_API_BASE configured too), but standalone deployments must set it —
+# there's no reliable way to guess a container's LAN-facing address from the
+# inside, and guessing wrong would fail silently on real speaker hardware.
+PUBLIC_BASE_URL = os.environ.get("ARIACAST_PUBLIC_URL", "")
 
-async def _call_light_service(entity_id: str, params: dict) -> None:
+
+async def _call_ha_service(domain: str, service: str, entity_id: str, params: dict) -> None:
     if not SUPERVISOR_TOKEN:
-        logger.debug("No SUPERVISOR_TOKEN available; skipping light service call for %s", entity_id)
+        logger.debug("No HA token available; skipping %s.%s for %s", domain, service, entity_id)
         return
     import aiohttp
 
     headers = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}", "Content-Type": "application/json"}
     async with aiohttp.ClientSession() as session:
         async with session.post(
-            f"{HA_API_BASE}/services/light/turn_on",
+            f"{HA_API_BASE}/services/{domain}/{service}",
             headers=headers,
             json={"entity_id": entity_id, **params},
             timeout=aiohttp.ClientTimeout(total=5),
         ) as resp:
             if resp.status >= 300:
-                logger.warning("Light service call for %s failed: HTTP %s", entity_id, resp.status)
+                logger.warning("%s.%s call for %s failed: HTTP %s", domain, service, entity_id, resp.status)
+
+
+async def _call_light_service(entity_id: str, params: dict) -> None:
+    await _call_ha_service("light", "turn_on", entity_id, params)
+
+
+async def _call_media_service(entity_id: str, service: str, params: dict) -> None:
+    await _call_ha_service("media_player", service, entity_id, params)
 
 # Recompute DSP for the actively-tracked room this often, in addition to the
 # event-driven recompute triggered by listener movement / node transitions.
@@ -86,12 +102,14 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
 
     async def upsert_room(request: web.Request) -> web.Response:
         body = await request.json()
+        ha_area_id = body.get("ha_area_id")
+        existing = await db.get_room_by_ha_area_id(ha_area_id) if (ha_area_id and not body.get("id")) else None
         room = Room(
-            id=body.get("id") or db.new_id(),
+            id=body.get("id") or (existing.id if existing else db.new_id()),
             name=body["name"],
-            ha_area_id=body.get("ha_area_id"),
-            width_meters=float(body.get("width_meters", 4.0)),
-            height_meters=float(body.get("height_meters", 4.0)),
+            ha_area_id=ha_area_id,
+            width_meters=float(body.get("width_meters", existing.width_meters if existing else 4.0)),
+            height_meters=float(body.get("height_meters", existing.height_meters if existing else 4.0)),
         )
         await db.upsert_room(room)
         return web.json_response(room.__dict__)
@@ -123,10 +141,12 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
 
     async def upsert_light(request: web.Request) -> web.Response:
         body = await request.json()
+        ha_entity_id = body["ha_entity_id"]
+        existing = await db.get_light_by_ha_entity_id(ha_entity_id) if not body.get("id") else None
         light = Light(
-            id=body.get("id") or db.new_id(),
+            id=body.get("id") or (existing.id if existing else db.new_id()),
             room_id=body.get("room_id"),
-            ha_entity_id=body["ha_entity_id"],
+            ha_entity_id=ha_entity_id,
             hardware_latency_ms=float(body.get("hardware_latency_ms", 150.0)),
             sync_mode=body.get("sync_mode", "palette"),
         )
@@ -138,10 +158,42 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
         results = await dsp.on_listener_moved(body["room_id"], float(body["x"]), float(body["y"]))
         return web.json_response([r.__dict__ for r in results])
 
+    async def sync_ha_speakers(request: web.Request) -> web.Response:
+        """Bulk-upsert existing Home Assistant `media_player` entities as
+        DSP-routable speakers alongside native AriaCast hardware — pushed by
+        the HACS integration (`ha_bridge_sync.py`), which is the side that
+        actually enumerates `hass.states`. Keyed by a synthetic
+        `hardware_uuid` (`ha:<entity_id>`) so re-syncs update in place."""
+        body = await request.json()
+        results = []
+        for item in body.get("speakers", []):
+            hardware_uuid = f"ha:{item['entity_id']}"
+            existing = await db.get_speaker_by_uuid(hardware_uuid)
+            speaker = Speaker(
+                id=existing.id if existing else db.new_id(),
+                room_id=item.get("room_id") or (existing.room_id if existing else None),
+                ha_entity_id=item["entity_id"],
+                hardware_uuid=hardware_uuid,
+                ip_address="",
+                port=0,
+                name=item.get("name", item["entity_id"]),
+                status=SpeakerStatus.ONLINE if item.get("available", True) else SpeakerStatus.UNAVAILABLE,
+                platform="home_assistant",
+                pos_x=existing.pos_x if existing else 0.0,
+                pos_y=existing.pos_y if existing else 0.0,
+                gain_db=existing.gain_db if existing else 0.0,
+                delay_ms=existing.delay_ms if existing else 0.0,
+                volume=existing.volume if existing else 50,
+            )
+            await db.upsert_speaker(speaker)
+            results.append({**speaker.__dict__, "status": speaker.status.value})
+        return web.json_response(results)
+
     app.router.add_get("/api/rooms", list_rooms)
     app.router.add_post("/api/rooms", upsert_room)
     app.router.add_get("/api/speakers", list_speakers)
     app.router.add_post("/api/speakers/{speaker_id}/position", update_speaker_position)
+    app.router.add_post("/api/speakers/sync-ha", sync_ha_speakers)
     app.router.add_get("/api/lights", list_lights)
     app.router.add_post("/api/lights", upsert_light)
     app.router.add_post("/api/listener-position", set_listener_position)
@@ -172,7 +224,15 @@ def create_app() -> web.Application:
     node_manager = SpeakerNodeManager(db)
     dsp = RoomSpatialAudioDSP(db)
     pubsub = PubSubServer(db)
-    socket_server = AriaCastSocketServer(db, node_manager)
+    socket_server = AriaCastSocketServer(
+        db, node_manager, call_media_service=_call_media_service, public_base_url=PUBLIC_BASE_URL
+    )
+    if not PUBLIC_BASE_URL:
+        logger.warning(
+            "ARIACAST_PUBLIC_URL not set — HA-bridged speakers (Sonos/Cast/Alexa/etc. "
+            "surfaced via the HA integration) won't receive audio until it's configured "
+            "to this add-on's own LAN-reachable URL (e.g. http://192.168.1.68:8099)."
+        )
     hue_sync = AlbumArtHueSync(db, _call_light_service)
 
     app = web.Application()

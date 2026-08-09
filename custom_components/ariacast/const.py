@@ -17,6 +17,7 @@ DATA_DSP = "dsp"
 DATA_HUE_SYNC = "hue_sync"
 DATA_PUBSUB = "pubsub"
 DATA_ENTITIES = "entities"
+DATA_HA_BRIDGE_SYNC = "ha_bridge_sync"
 
 SIGNAL_SPEAKER_UPDATED = f"{DOMAIN}_speaker_updated"
 
