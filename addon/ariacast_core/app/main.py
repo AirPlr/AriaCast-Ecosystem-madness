@@ -185,16 +185,35 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
                 pos_y=existing.pos_y if existing else 0.0,
                 gain_db=existing.gain_db if existing else 0.0,
                 delay_ms=existing.delay_ms if existing else 0.0,
+                extra_delay_ms=existing.extra_delay_ms if existing else 0.0,
                 volume=existing.volume if existing else 50,
             )
             await db.upsert_speaker(speaker)
             results.append({**speaker.__dict__, "status": speaker.status.value})
         return web.json_response(results)
 
+    async def set_speaker_calibration(request: web.Request) -> web.Response:
+        """Manual/calibration delay override for one speaker, additive on top
+        of the DSP's geometric delay (see RoomSpatialAudioDSP.recompute_room).
+        Meant for real hardware-latency differences between speakers (e.g.
+        two ESPHome nodes with very different inherent playback delay) that
+        pure listener-distance math can't know about — set directly from the
+        Web UI, or written back by an app-driven auto-calibration flow."""
+        speaker_id = request.match_info["speaker_id"]
+        body = await request.json()
+        speaker = await db.set_speaker_extra_delay(speaker_id, float(body["extra_delay_ms"]))
+        if not speaker:
+            return web.json_response({"error": "not found"}, status=404)
+        if speaker.room_id:
+            await dsp.recompute_room(speaker.room_id)
+            speaker = await db.get_speaker(speaker_id)
+        return web.json_response({**speaker.__dict__, "status": speaker.status.value})
+
     app.router.add_get("/api/rooms", list_rooms)
     app.router.add_post("/api/rooms", upsert_room)
     app.router.add_get("/api/speakers", list_speakers)
     app.router.add_post("/api/speakers/{speaker_id}/position", update_speaker_position)
+    app.router.add_post("/api/speakers/{speaker_id}/calibration", set_speaker_calibration)
     app.router.add_post("/api/speakers/sync-ha", sync_ha_speakers)
     app.router.add_get("/api/lights", list_lights)
     app.router.add_post("/api/lights", upsert_light)

@@ -37,7 +37,8 @@ class Speaker:
     pos_y: float = 0.0
     orientation_deg: float = 0.0
     gain_db: float = 0.0
-    delay_ms: float = 0.0
+    delay_ms: float = 0.0  # total delay actually applied; overwritten every DSP tick (geometric + extra_delay_ms)
+    extra_delay_ms: float = 0.0  # manual/calibration offset layered on top of the geometric delay; survives DSP ticks
     volume: int = 50
     is_playing: bool = False
     platform: str = ""

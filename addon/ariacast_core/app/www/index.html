@@ -376,7 +376,12 @@ function renderSpeakerList() {
       <div style="flex:1">
         <div class="name">${s.name}</div>
         <div class="speaker-meta">${s.ip_address}:${s.port} · gain ${Number(s.gain_db).toFixed(1)}dB · delay ${Number(s.delay_ms).toFixed(0)}ms</div>
+        <div class="speaker-meta">
+          manual delay <input type="number" class="delay-input" step="1" value="${Number(s.extra_delay_ms || 0).toFixed(0)}" style="width:60px" /> ms
+        </div>
       </div>`;
+    const input = row.querySelector('.delay-input');
+    input.onchange = () => api('POST', `/api/speakers/${s.id}/calibration`, { extra_delay_ms: parseFloat(input.value) || 0 });
     el.appendChild(row);
   });
 }
@@ -501,12 +506,19 @@ $('#new-room').onclick = async () => {
 };
 
 $('#save-room').onclick = async () => {
-  await api('POST', '/api/rooms', {
+  const room = await api('POST', '/api/rooms', {
     id: activeRoomId,
     name: $('#room-name').value,
     width_meters: parseFloat($('#room-width').value),
     height_meters: parseFloat($('#room-height').value),
   });
+  // Without this, activeRoomId stays whatever it was before the save (often
+  // null, e.g. when a room is created by typing straight into the form
+  // instead of clicking "+ New Room" first) and every subsequent save POSTs
+  // with a missing/stale id, so the backend upsert mints a brand-new room
+  // each time instead of updating the one just saved.
+  activeRoomId = room.id;
+  renderRoomList();
 };
 
 connectWS();
