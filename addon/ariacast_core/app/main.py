@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from aiohttp import web
 
@@ -27,6 +28,7 @@ try:
     from ariacast_core.pubsub import PubSubServer
 
     from socket_server import AriaCastSocketServer
+    from discovery_responder import start_discovery_responder
 except Exception as exc:  # pragma: no cover - startup diagnostics
     # Supervisor's add-on log fetch truncates long output, and the default
     # traceback for a failed C-extension import (e.g. numpy) can run to
@@ -208,11 +210,17 @@ async def _on_startup(app: web.Application) -> None:
     import asyncio
 
     app["dsp_task"] = asyncio.create_task(_dsp_tick_loop(app["dsp"], db))
+
+    advertise_ip = urlparse(PUBLIC_BASE_URL).hostname if PUBLIC_BASE_URL else ""
+    app["discovery_transport"] = await start_discovery_responder(advertise_ip, WEB_PORT)
+
     logger.info("ariacast_core add-on ready on :%s", WEB_PORT)
 
 
 async def _on_cleanup(app: web.Application) -> None:
     app["dsp_task"].cancel()
+    if app.get("discovery_transport") is not None:
+        app["discovery_transport"].close()
     await app["node_manager"].stop()
     await app["pubsub"].stop()
     await app["db"].stop()
