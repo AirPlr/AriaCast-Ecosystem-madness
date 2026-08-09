@@ -39,11 +39,13 @@ DB_PATH = os.environ.get("ARIACAST_DB_PATH", "/data/ariacast.db")
 WEB_PORT = int(os.environ.get("ARIACAST_WEB_PORT", "8099"))
 WWW_DIR = Path(__file__).parent / "www"
 
-# Add-ons reach Home Assistant Core through the Supervisor proxy using this
-# token, injected automatically when `homeassistant_api: true` is set in
-# config.yaml (see addon/ariacast_core/config.yaml).
-SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN")
-HA_API_BASE = "http://supervisor/core/api"
+# Add-ons reach Home Assistant Core through the Supervisor proxy using
+# SUPERVISOR_TOKEN, injected automatically when `homeassistant_api: true` is
+# set in config.yaml (see addon/ariacast_core/config.yaml). Running standalone
+# (outside Supervisor, e.g. plain `docker run` on another host) instead set
+# HA_TOKEN to a long-lived access token and HA_API_BASE to the real HA URL.
+SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HA_TOKEN")
+HA_API_BASE = os.environ.get("HA_API_BASE", "http://supervisor/core/api")
 
 
 async def _call_light_service(entity_id: str, params: dict) -> None:
