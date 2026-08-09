@@ -97,8 +97,14 @@ class RoomSpatialAudioDSP:
 
         speakers = await self.db.list_speakers(room_id=room_id)
         results = self.compute(listener_x, listener_y, speakers)
+        speakers_by_id = {s.id: s for s in speakers}
         for r in results:
-            await self.db.update_speaker_dsp(r.speaker_id, r.gain_db, r.delay_ms)
+            # Layer the user's manual/calibration offset on top of the pure
+            # geometric delay so hardware with real playback latency (e.g.
+            # two ESPHome speakers with very different inherent delay) can be
+            # compensated for — see Speaker.extra_delay_ms.
+            extra = speakers_by_id[r.speaker_id].extra_delay_ms
+            await self.db.update_speaker_dsp(r.speaker_id, r.gain_db, r.delay_ms + extra)
 
         # Any offline speaker in the room is parked at unity/no-delay so it
         # snaps to a sane baseline the moment it reconnects, before the next

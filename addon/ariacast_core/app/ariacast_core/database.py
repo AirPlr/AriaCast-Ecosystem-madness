@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS speakers (
     orientation_deg REAL NOT NULL DEFAULT 0,
     gain_db REAL NOT NULL DEFAULT 0,
     delay_ms REAL NOT NULL DEFAULT 0,
+    extra_delay_ms REAL NOT NULL DEFAULT 0,
     volume INTEGER NOT NULL DEFAULT 50,
     is_playing INTEGER NOT NULL DEFAULT 0,
     platform TEXT NOT NULL DEFAULT '',
@@ -90,9 +91,21 @@ class DatabaseService:
         self._db = await aiosqlite.connect(self.db_path)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(SCHEMA)
+        await self._migrate()
         await self._db.execute(
             "INSERT OR IGNORE INTO app_state (id, current_room_id, listener_x, listener_y) VALUES (1, NULL, 0, 0)"
         )
+        await self._db.commit()
+
+    async def _migrate(self) -> None:
+        """`CREATE TABLE IF NOT EXISTS` doesn't add columns to a table that
+        already exists on disk from before that column was introduced —
+        patch those in-place here, one ALTER TABLE per historical column."""
+        assert self._db is not None
+        cur = await self._db.execute("PRAGMA table_info(speakers)")
+        existing_cols = {row[1] for row in await cur.fetchall()}
+        if "extra_delay_ms" not in existing_cols:
+            await self._db.execute("ALTER TABLE speakers ADD COLUMN extra_delay_ms REAL NOT NULL DEFAULT 0")
         await self._db.commit()
         logger.info("DatabaseService ready at %s", self.db_path)
 
@@ -167,22 +180,23 @@ class DatabaseService:
         async with self._lock:
             await self._db.execute(
                 """INSERT INTO speakers (id, room_id, ha_entity_id, hardware_uuid, ip_address, port, name,
-                                          status, pos_x, pos_y, orientation_deg, gain_db, delay_ms, volume,
-                                          is_playing, platform, last_seen)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                          status, pos_x, pos_y, orientation_deg, gain_db, delay_ms, extra_delay_ms,
+                                          volume, is_playing, platform, last_seen)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(id) DO UPDATE SET
                      room_id=excluded.room_id, ha_entity_id=excluded.ha_entity_id,
                      ip_address=excluded.ip_address, port=excluded.port, name=excluded.name,
                      status=excluded.status, pos_x=excluded.pos_x, pos_y=excluded.pos_y,
                      orientation_deg=excluded.orientation_deg, gain_db=excluded.gain_db,
-                     delay_ms=excluded.delay_ms, volume=excluded.volume, is_playing=excluded.is_playing,
+                     delay_ms=excluded.delay_ms, extra_delay_ms=excluded.extra_delay_ms,
+                     volume=excluded.volume, is_playing=excluded.is_playing,
                      platform=excluded.platform, last_seen=excluded.last_seen""",
                 (
                     speaker.id, speaker.room_id, speaker.ha_entity_id, speaker.hardware_uuid,
                     speaker.ip_address, speaker.port, speaker.name, speaker.status.value,
                     speaker.pos_x, speaker.pos_y, speaker.orientation_deg, speaker.gain_db,
-                    speaker.delay_ms, speaker.volume, int(speaker.is_playing), speaker.platform,
-                    speaker.last_seen,
+                    speaker.delay_ms, speaker.extra_delay_ms, speaker.volume, int(speaker.is_playing),
+                    speaker.platform, speaker.last_seen,
                 ),
             )
             await self._db.commit()
@@ -231,6 +245,23 @@ class DatabaseService:
         speaker = await self.get_speaker(speaker_id)
         if speaker:
             await self._emit("speakers", "dsp", self._speaker_to_dict(speaker))
+
+    async def set_speaker_extra_delay(self, speaker_id: str, extra_delay_ms: float) -> Optional[Speaker]:
+        """Persist a manual/calibration delay offset for one speaker. This is
+        additive on top of `RoomSpatialAudioDSP`'s geometric delay — see
+        `RoomSpatialAudioDSP.recompute_room`, which reads it back and folds
+        it into `delay_ms` on every tick so the override survives listener
+        movement recomputes instead of being clobbered by them."""
+        assert self._db is not None
+        await self._db.execute(
+            "UPDATE speakers SET extra_delay_ms = ? WHERE id = ?",
+            (extra_delay_ms, speaker_id),
+        )
+        await self._db.commit()
+        speaker = await self.get_speaker(speaker_id)
+        if speaker:
+            await self._emit("speakers", "dsp", self._speaker_to_dict(speaker))
+        return speaker
 
     async def update_speaker_playback(self, speaker_id: str, *, volume: Optional[int] = None, is_playing: Optional[bool] = None) -> None:
         assert self._db is not None
