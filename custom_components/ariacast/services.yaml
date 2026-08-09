@@ -1,0 +1,61 @@
+set_room_layout:
+  name: Set room layout
+  description: Create or update a room's 2D dimensions and Home Assistant Area mapping.
+  fields:
+    room_id:
+      required: true
+      selector:
+        text:
+    name:
+      required: true
+      selector:
+        text:
+    ha_area_id:
+      required: false
+      selector:
+        area:
+    width_meters:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 0.1
+          unit_of_measurement: m
+    height_meters:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 0.1
+          unit_of_measurement: m
+
+set_listener_position:
+  name: Set listener position
+  description: Update the tracked listener (x, y) position in a room, triggering a RoomSpatialAudioDSP recompute.
+  fields:
+    room_id:
+      required: true
+      selector:
+        text:
+    x:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 0.01
+          unit_of_measurement: m
+    y:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 0.01
+          unit_of_measurement: m
+
+sync_ha_areas:
+  name: Sync Home Assistant Areas
+  description: Import every Home Assistant Area as an AriaCast room (creates missing rooms, updates names on existing ones).

@@ -1,0 +1,8 @@
+ {
+     "id": "music_assistant",
+     "name": "MusicAssistant Control",
+     "description": "Native controls and output selection for MusicAssistant servers.",
+    "version": "1.9.3",
+     "author": "AriaCast Team",
+     "scriptPath": "example_MA.js"
+ }

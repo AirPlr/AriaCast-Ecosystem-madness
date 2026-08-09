@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ariacast.org/schemas/control_command.schema.json",
+  "title": "AriaCast Control Command Message",
+  "description": "JSON text frame sent by the Sender (or external controller) to the Receiver via the /control WebSocket. Used by the Python server only; the Go server ignores incoming WebSocket text frames on /control.",
+  "type": "object",
+  "required": ["command"],
+  "properties": {
+    "command": {
+      "type": "string",
+      "enum": [
+        "play", "pause", "next", "previous", "stop",
+        "play_pause", "seek",
+        "volume", "volume_set"
+      ],
+      "description": "Command to execute."
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["up", "down", "get"],
+      "description": "Volume step direction. Used when command is 'volume'."
+    },
+    "value": {
+      "type": "number",
+      "description": "Absolute volume (0-100) for command='volume', or seek position in ms for command='seek'."
+    },
+    "level": {
+      "type": "number",
+      "description": "Absolute volume (0-100). Used when command is 'volume_set'."
+    },
+    "position_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Seek target in milliseconds. Used when command is 'seek'."
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,30 @@
+name: "AriaCast Core"
+version: "0.1.0"
+slug: "ariacast_core"
+description: "Low-latency AriaCast audio orchestration hub: spatial DSP, TTS ducking, Album Art Hue Sync, and the 2D Web UI room editor."
+url: "https://github.com/AirPlr/AriaCast-Ecosystem-madness"
+arch:
+  - amd64
+  - aarch64
+init: false
+homeassistant_api: true
+hassio_api: true
+host_network: true
+ports:
+  8099/tcp: 8099
+  12888/udp: 12888
+ports_description:
+  8099/tcp: "Ingress Web UI + REST API + inbound /audio for Senders"
+  12888/udp: "AriaCast UDP discovery relay (optional)"
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:speaker-wireless
+panel_title: AriaCast
+map:
+  - config:rw
+options:
+  db_path: "/data/ariacast.db"
+  log_level: "info"
+schema:
+  db_path: str
+  log_level: "list(debug|info|warning|error)"

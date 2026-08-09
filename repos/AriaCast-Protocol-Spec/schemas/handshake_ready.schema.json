@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ariacast.org/schemas/handshake_ready.schema.json",
+  "title": "AriaCast Audio Handshake (READY)",
+  "description": "JSON text frame sent by the Receiver immediately after a /audio WebSocket upgrade.",
+  "type": "object",
+  "required": ["status", "sample_rate", "channels", "frame_size"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "const": "READY",
+      "description": "Always 'READY'."
+    },
+    "type": {
+      "type": "string",
+      "const": "handshake",
+      "description": "Forward-compatibility alias. Accepted by Android Sender in place of status=='READY'."
+    },
+    "sample_rate": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Audio sample rate in Hz. Normally 48000."
+    },
+    "channels": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of audio channels. Normally 2 (stereo)."
+    },
+    "frame_size": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Expected binary frame size in bytes. Normally 3840."
+    }
+  },
+  "additionalProperties": true
+}

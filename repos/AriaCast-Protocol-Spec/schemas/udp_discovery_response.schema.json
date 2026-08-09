@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ariacast.org/schemas/udp_discovery_response.schema.json",
+  "title": "AriaCast UDP Discovery Response",
+  "description": "JSON payload sent by the Receiver in response to a 'DISCOVER_AUDIOCAST' UDP broadcast.",
+  "type": "object",
+  "required": ["server_name", "port", "samplerate", "channels"],
+  "properties": {
+    "server_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable receiver display name."
+    },
+    "ip": {
+      "type": "string",
+      "description": "Receiver's outbound LAN IP address. Optional; Sender may use the source address of the UDP datagram instead."
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "WebSocket streaming port. Normally 12889."
+    },
+    "samplerate": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Audio sample rate in Hz. Normally 48000."
+    },
+    "channels": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of audio channels. Normally 2."
+    }
+  },
+  "additionalProperties": true
+}

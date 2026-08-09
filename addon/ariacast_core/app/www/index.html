@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AriaCast — Room Editor</title>
+<style>
+  :root {
+    --bg: #101418; --panel: #171c22; --panel-2: #1e242b; --border: #2a323b;
+    --text: #e8edf2; --muted: #8b98a5; --accent: #4fc3f7; --online: #4caf50;
+    --offline: #616161; --unavailable: #e53935; --grid: #232a31;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #layout { display: grid; grid-template-columns: 260px 1fr 300px; height: 100vh; }
+  .panel { background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; padding: 12px; }
+  .panel h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 4px 0 10px; }
+  .room-item { padding: 8px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+  .room-item:hover { background: var(--panel-2); }
+  .room-item.active { background: var(--accent); color: #05222e; font-weight: 600; }
+  .room-item small { opacity: 0.7; font-weight: 400; }
+  button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 0.85rem; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #05222e; border-color: var(--accent); font-weight: 600; }
+  #canvas-wrap { position: relative; display: flex; align-items: center; justify-content: center; overflow: auto; }
+  canvas { background: repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 40px),
+                        repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 40px), #0b0e11;
+           border-radius: 12px; border: 1px solid var(--border); cursor: crosshair; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 3px; }
+  .field input, .field select { width: 100%; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 8px; }
+  .speaker-row { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; background: var(--panel-2); margin-bottom: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .dot.online { background: var(--online); box-shadow: 0 0 6px var(--online); }
+  .dot.offline { background: var(--offline); }
+  .dot.unavailable { background: var(--unavailable); }
+  .speaker-meta { font-size: 0.72rem; color: var(--muted); }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .badge { font-size: 0.68rem; padding: 2px 6px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+  #status-bar { position: absolute; top: 10px; left: 10px; font-size: 0.72rem; color: var(--muted); background: rgba(0,0,0,0.4); padding: 4px 8px; border-radius: 6px; }
+  .legend { display: flex; gap: 12px; font-size: 0.72rem; color: var(--muted); margin-top: 8px; }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+</style>
+</head>
+<body>
+<div id="layout">
+  <div class="panel">
+    <h2>Rooms</h2>
+    <div id="room-list"></div>
+    <div class="toolbar">
+      <button id="new-room" class="primary">+ Room</button>
+    </div>
+    <h2 style="margin-top:20px">Room Layout</h2>
+    <div class="field"><label>Name</label><input id="room-name" /></div>
+    <div class="field"><label>Width (m)</label><input id="room-width" type="number" step="0.1" min="1" /></div>
+    <div class="field"><label>Height (m)</label><input id="room-height" type="number" step="0.1" min="1" /></div>
+    <button id="save-room" class="primary" style="width:100%">Save Room</button>
+  </div>
+
+  <div id="canvas-wrap">
+    <div id="status-bar">disconnected</div>
+    <canvas id="canvas" width="760" height="600"></canvas>
+  </div>
+
+  <div class="panel" style="border-right:none; border-left:1px solid var(--border)">
+    <h2>Speakers <span class="badge" id="speaker-count">0</span></h2>
+    <div id="speaker-list"></div>
+    <div class="legend">
+      <span><i class="dot online"></i>online</span>
+      <span><i class="dot offline"></i>offline</span>
+      <span><i class="dot unavailable"></i>unavailable</span>
+    </div>
+    <h2 style="margin-top:20px">Listener</h2>
+    <p class="speaker-meta">Drag the cyan marker on the canvas, or click anywhere in the room, to set the tracked listener position and trigger a spatial DSP recompute.</p>
+  </div>
+</div>
+
+<script>
+const PX_PER_METER = 90;
+let state = { rooms: [], speakers: [], lights: [], app_state: {} };
+let activeRoomId = null;
+let dragging = null; // {type: 'speaker'|'listener', id}
+
+const $ = (sel) => document.querySelector(sel);
+const canvas = $('#canvas');
+const ctx = canvas.getContext('2d');
+
+function apiUrl(path) { return path; } // ingress-relative
+
+async function api(method, path, body) {
+  const res = await fetch(apiUrl(path), {
+    method, headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res.json();
+}
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => $('#status-bar').textContent = 'live';
+  ws.onclose = () => { $('#status-bar').textContent = 'reconnecting…'; setTimeout(connectWS, 1500); };
+  ws.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === 'snapshot') {
+      state = msg.data;
+      if (!activeRoomId && state.rooms.length) activeRoomId = state.rooms[0].id;
+      renderAll();
+    } else if (msg.type === 'db_event') {
+      applyEvent(msg);
+      renderAll();
+    }
+  };
+}
+
+function applyEvent(evt) {
+  const { table, op, row } = evt;
+  const listKey = table; // rooms | speakers | lights | app_state
+  if (table === 'app_state') { state.app_state = row; return; }
+  const list = state[listKey] || [];
+  if (op === 'delete') {
+    state[listKey] = list.filter((r) => r.id !== row.id);
+    return;
+  }
+  const idx = list.findIndex((r) => r.id === row.id);
+  if (idx >= 0) list[idx] = row; else list.push(row);
+  state[listKey] = list;
+}
+
+function currentRoom() { return state.rooms.find((r) => r.id === activeRoomId); }
+
+function renderAll() {
+  renderRoomList();
+  renderRoomForm();
+  renderSpeakerList();
+  renderCanvas();
+}
+
+function renderRoomList() {
+  const el = $('#room-list');
+  el.innerHTML = '';
+  state.rooms.forEach((room) => {
+    const div = document.createElement('div');
+    div.className = 'room-item' + (room.id === activeRoomId ? ' active' : '');
+    const count = state.speakers.filter((s) => s.room_id === room.id).length;
+    div.innerHTML = `<span>${room.name}</span><small>${count} spk</small>`;
+    div.onclick = () => { activeRoomId = room.id; renderAll(); };
+    el.appendChild(div);
+  });
+}
+
+function renderRoomForm() {
+  const room = currentRoom();
+  $('#room-name').value = room ? room.name : '';
+  $('#room-width').value = room ? room.width_meters : 4;
+  $('#room-height').value = room ? room.height_meters : 4;
+}
+
+function renderSpeakerList() {
+  const list = state.speakers.filter((s) => s.room_id === activeRoomId);
+  $('#speaker-count').textContent = list.length;
+  const el = $('#speaker-list');
+  el.innerHTML = '';
+  list.forEach((s) => {
+    const row = document.createElement('div');
+    row.className = 'speaker-row';
+    row.innerHTML = `<span class="dot ${s.status}"></span>
+      <div style="flex:1">
+        <div>${s.name}</div>
+        <div class="speaker-meta">${s.ip_address}:${s.port} · gain ${Number(s.gain_db).toFixed(1)}dB · delay ${Number(s.delay_ms).toFixed(0)}ms</div>
+      </div>`;
+    el.appendChild(row);
+  });
+}
+
+function roomToCanvasScale(room) {
+  const w = room.width_meters * PX_PER_METER;
+  const h = room.height_meters * PX_PER_METER;
+  canvas.width = Math.max(200, w);
+  canvas.height = Math.max(200, h);
+  return { w, h };
+}
+
+function statusColor(status) {
+  return status === 'online' ? '#4caf50' : status === 'unavailable' ? '#e53935' : '#616161';
+}
+
+function renderCanvas() {
+  const room = currentRoom();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!room) return;
+  roomToCanvasScale(room);
+
+  // room border
+  ctx.strokeStyle = '#3a4552';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+
+  // listener position
+  const as = state.app_state || {};
+  if (as.current_room_id === room.id) {
+    const lx = as.listener_x * PX_PER_METER, ly = as.listener_y * PX_PER_METER;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 10, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(79,195,247,0.25)';
+    ctx.fill();
+    ctx.strokeStyle = '#4fc3f7';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#4fc3f7';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('listener', lx + 12, ly + 4);
+  }
+
+  // speakers
+  state.speakers.filter((s) => s.room_id === room.id).forEach((s) => {
+    const x = s.pos_x * PX_PER_METER, y = s.pos_y * PX_PER_METER;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate((s.orientation_deg * Math.PI) / 180);
+    ctx.beginPath();
+    ctx.moveTo(0, -12);
+    ctx.lineTo(9, 9);
+    ctx.lineTo(-9, 9);
+    ctx.closePath();
+    ctx.fillStyle = statusColor(s.status);
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#cfd8e3';
+    ctx.font = '11px sans-serif';
+    ctx.fillText(s.name, x + 14, y + 4);
+  });
+}
+
+function canvasToMeters(evt) {
+  const rect = canvas.getBoundingClientRect();
+  const px = evt.clientX - rect.left, py = evt.clientY - rect.top;
+  return { x: px / PX_PER_METER, y: py / PX_PER_METER };
+}
+
+function hitTestSpeaker(mx, my) {
+  const room = currentRoom();
+  if (!room) return null;
+  return state.speakers.find((s) => s.room_id === room.id && Math.hypot(s.pos_x - mx, s.pos_y - my) < 0.22);
+}
+
+canvas.addEventListener('mousedown', (evt) => {
+  const { x, y } = canvasToMeters(evt);
+  const speaker = hitTestSpeaker(x, y);
+  if (speaker) {
+    dragging = { type: 'speaker', id: speaker.id };
+  } else {
+    dragging = { type: 'listener' };
+    api('POST', '/api/listener-position', { room_id: activeRoomId, x, y });
+  }
+});
+
+canvas.addEventListener('mousemove', (evt) => {
+  if (!dragging) return;
+  const { x, y } = canvasToMeters(evt);
+  if (dragging.type === 'speaker') {
+    const s = state.speakers.find((sp) => sp.id === dragging.id);
+    if (s) { s.pos_x = x; s.pos_y = y; renderCanvas(); }
+  } else if (dragging.type === 'listener') {
+    state.app_state = { ...state.app_state, current_room_id: activeRoomId, listener_x: x, listener_y: y };
+    renderCanvas();
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  if (!dragging) return;
+  if (dragging.type === 'speaker') {
+    const s = state.speakers.find((sp) => sp.id === dragging.id);
+    if (s) api('POST', `/api/speakers/${s.id}/position`, { pos_x: s.pos_x, pos_y: s.pos_y, orientation_deg: s.orientation_deg });
+  } else if (dragging.type === 'listener') {
+    const as = state.app_state;
+    api('POST', '/api/listener-position', { room_id: activeRoomId, x: as.listener_x, y: as.listener_y });
+  }
+  dragging = null;
+});
+
+$('#new-room').onclick = async () => {
+  const room = await api('POST', '/api/rooms', { name: 'New Room', width_meters: 4, height_meters: 4 });
+  activeRoomId = room.id;
+};
+
+$('#save-room').onclick = async () => {
+  await api('POST', '/api/rooms', {
+    id: activeRoomId,
+    name: $('#room-name').value,
+    width_meters: parseFloat($('#room-width').value),
+    height_meters: parseFloat($('#room-height').value),
+  });
+};
+
+connectWS();
+</script>
+</body>
+</html>

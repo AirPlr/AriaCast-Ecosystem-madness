@@ -1,0 +1,3 @@
+{
+  "$comment": "DEPRECATED: Replaced by control_action.schema.json (Receiver→Sender) and control_command.schema.json (Sender→Receiver). The actual control envelope uses an 'action' key (not 'command') for receiver-to-sender messages, and has no 'session_id' or 'timestamp_us' fields."
+}

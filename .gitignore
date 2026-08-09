@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Staged by scripts/build_addon.sh from custom_components/ariacast/core —
+# regenerate, don't commit, to avoid the two copies drifting apart.
+addon/ariacast_core/app/ariacast_core/
+
+# Local SQLite DBs
+*.db
+*.db-journal
+
+# Android / Gradle build output vendored from source repos
+repos/**/build/
+repos/**/.gradle/
+repos/**/app/release/
+repos/**/*.iml

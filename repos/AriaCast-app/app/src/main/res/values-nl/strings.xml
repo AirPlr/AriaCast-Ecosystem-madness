@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_available_title">Nieuwe update beschikbaar</string>
+    <string name="update_available_message">Versie %1$s is beschikbaar. Wilt u deze downloaden?\n\n%2$s</string>
+    <string name="download">Downloaden</string>
+    <string name="later">Later</string>
+    <string name="up_to_date_title">Up-to-date</string>
+    <string name="up_to_date_message">U gebruikt al de nieuwste versie.</string>
+    <string name="ok">OK</string>
+    <string name="update_failed_title">Updatecontrole mislukt</string>
+    <string name="update_failed_message">Kon geen verbinding maken met GitHub om op updates te controleren.</string>
+
+    <!-- Main Activity -->
+    <string name="media_projection_denied">MediaProjection-toestemming geweigerd.</string>
+    <string name="select_server_first">Selecteer eerst een server.</string>
+    <string name="scanning">Scannen…</string>
+    <string name="refresh">Vernieuwen</string>
+    <string name="stop">Stop</string>
+    <string name="start">Start</string>
+    <string name="home">Home</string>
+    <string name="audio">Audio</string>
+    <string name="devices">Apparaten</string>
+    <string name="logs">Logs</string>
+    <string name="status">Status</string>
+    <string name="disconnected">VERBINDING VERBROKEN</string>
+    <string name="connect">Verbinden</string>
+    <string name="servers">Servers</string>
+    <string name="ready_to_cast">Klaar om te casten</string>
+    <string name="manual_entry">Handmatige invoer</string>
+    <string name="manual_entry_desc">Voer server IP en poort in</string>
+    <string name="ip_address">IP-adres</string>
+    <string name="port">Poort</string>
+    <string name="add">Toevoegen</string>
+    <string name="synchronization">Synchronisatie</string>
+    <string name="speaker_groups">Speakergroepen</string>
+    <string name="create">Maken</string>
+    <string name="offline_devices_error">Sommige apparaten in deze groep zijn offline</string>
+    <string name="no_servers_found">Geen servers gevonden</string>
+    <string name="grant_notification_permission">Meldingstoegang verlenen</string>
+    <string name="devices_count_format">%1$d apparaten</string>
+
+    <!-- Settings Activity -->
+    <string name="settings">Instellingen</string>
+    <string name="general">Algemeen</string>
+    <string name="extensions">Extensies</string>
+    <string name="casting">Casten</string>
+    <string name="about">Over</string>
+    <string name="version_format">Versie %1$s</string>
+    <string name="select_appearance">Selecteer weergave</string>
+    <string name="select_accent_color">Selecteer accentkleur</string>
+    <string name="theme_light">Licht</string>
+    <string name="theme_dark">Donker</string>
+    <string name="theme_follow_system">Systeem volgen</string>
+    <string name="accent_blue">Blauw</string>
+    <string name="accent_purple">Paars</string>
+    <string name="accent_green">Groen</string>
+    <string name="accent_orange">Oranje</string>
+    <string name="accent_pink">Roze</string>
+    <string name="secret_logs_one_tap">Nog één tik om geheime logs te openen…</string>
+    <string name="secret_logs_multiple_taps">Nog %1$d tikken om geheime logs te openen…</string>
+    <string name="server_cleared">Laatste serververbinding gewist</string>
+    <string name="appearance">Weergave</string>
+    <string name="accent_color">Accentkleur</string>
+    <string name="language">Taal</string>
+    <string name="select_language">Selecteer taal</string>
+    <string name="language_default">Systeemstandaard</string>
+    <string name="enable_video">Video inschakelen</string>
+    <string name="enable_video_desc">Cast schermvideo samen met audio</string>
+    <string name="multiroom">Multiroom ondersteuning</string>
+    <string name="multiroom_desc">Maakt het mogelijk om speakergroepen aan te maken</string>
+    <string name="plugins">Plugins</string>
+    <string name="manage_plugins_desc">Beheer script-gebaseerde extensies</string>
+    <string name="notification_access">Meldingstoegang</string>
+    <string name="notification_access_desc">Vereist voor media-metadata</string>
+    <string name="check_for_updates">Controleren op updates</string>
+    <string name="github_repo">GitHub-repository</string>
+    <string name="github_repo_desc">Bekijk broncode en meld problemen</string>
+    <string name="reset_last_server">Laatste server resetten</string>
+    <string name="reset_last_server_desc">Wis opgeslagen serververbindingsdetails</string>
+    <string name="plugin_folder">Plugin-map</string>
+    <string name="change_plugin_folder_desc">Plugin-map wijzigen of wissen</string>
+
+    <!-- Protocols Activity -->
+    <string name="protocols">Protocollen</string>
+    <string name="protocols_desc">Beheer ondersteunde streamingprotocollen</string>
+    <string name="ariacast_protocol">AriaCast</string>
+    <string name="ariacast_protocol_desc">Eigen high-fidelity streamingprotocol</string>
+    <string name="dlna_protocol">DLNA / UPnP</string>
+    <string name="dlna_protocol_desc">Compatibel met de meeste smart-tv\'s en mediaspelers</string>
+    <string name="google_cast_protocol">Google Cast</string>
+    <string name="google_cast_protocol_desc">Streamen naar Chromecast- en Nest-apparaten</string>
+    <string name="airplay_protocol">AirPlay 1</string>
+    <string name="airplay_protocol_desc">Streamen naar compatibele AirPlay-speakers</string>
+
+    <!-- Plugins Activity -->
+    <string name="plugin_folder_updated">Plugin-map bijgewerkt</string>
+    <string name="plugin_folder_title">Plugin-map</string>
+    <string name="plugin_folder_message">Om plugins te gebruiken, selecteer een map waar ze worden opgeslagen en bijgewerkt vanaf GitHub.</string>
+    <string name="select_folder">Map selecteren</string>
+    <string name="cancel">Annuleren</string>
+    <string name="use_default">Standaard gebruiken</string>
+    <string name="plugin_author_format">door %1$s • v%2$s</string>
+    <string name="close">Sluiten</string>
+    <string name="configure">Configureren</string>
+    <string name="plugin_details_format">%1$s\n\nVersie: %2$s\nAuteur: %3$s</string>
+    <string name="syncing_plugins">Plugins synchroniseren vanaf GitHub…</string>
+    <string name="plugins_synced">Plugins bijgewerkt</string>
+    <string name="sync_failed">Plugin-synchronisatie mislukt</string>
+    <string name="plugin_consent_title">Plugins van derden</string>
+    <string name="plugin_consent_message">Plugins kunnen aangepaste scripts uitvoeren om met media en servers te communiceren. Installeer alleen plugins van vertrouwde bronnen.\n\nWilt u het plugin-systeem inschakelen?</string>
+    <string name="accept">Accepteren</string>
+    <string name="decline">Weigeren</string>
+
+    <!-- AudioCastService -->
+    <string name="audio_video">Audio &amp; Video</string>
+    <string name="audio_only">Alleen audio</string>
+    <string name="casting_to">Casten naar %1$s (%2$s)</string>
+    <string name="casting_to_multiple">Casten naar %1$d apparaten</string>
+    <string name="connecting_to">Verbinden met %1$s</string>
+    <string name="not_casting">Niet aan het casten</string>
+    <string name="unknown">Onbekend</string>
+    <string name="multiroom_group">Multiroom groep</string>
+    <string name="connecting">Verbinden…</string>
+
+    <!-- Tile Service -->
+    <string name="tile_tap_to_cast">Tik om te casten</string>
+    <string name="tile_discovering">Ontdekken…</string>
+    <string name="tile_connecting">Verbinden…</string>
+    <string name="tile_casting">Casten…</string>
+    <string name="tile_error">Er is een fout opgetreden</string>
+
+    <!-- Packet Log Activity -->
+    <string name="packet_logs">Pakketlogs</string>
+    <string name="packet_logs_desc">Bekijk gedetailleerde netwerkpakketlogs voor foutopsporing</string>
+    <string name="search_logs">Logs doorzoeken…</string>
+    <string name="clear_logs">Logs wissen</string>
+
+    <!-- Create Group Dialog -->
+    <string name="create_speaker_group">Speakergroep maken</string>
+    <string name="group_name">Groepsnaam</string>
+    <string name="select_devices">Apparaten selecteren</string>
+    <string name="save">Opslaan</string>
+</resources>

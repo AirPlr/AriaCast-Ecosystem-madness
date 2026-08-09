@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ariacast.org/schemas/metadata_object.schema.json",
+  "title": "AriaCast Metadata Object",
+  "description": "The track metadata payload. Both camelCase (Android) and snake_case (server broadcast) key names MUST be accepted by all implementations.",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": ["string", "null"],
+      "description": "Track title."
+    },
+    "artist": {
+      "type": ["string", "null"],
+      "description": "Artist name."
+    },
+    "album": {
+      "type": ["string", "null"],
+      "description": "Album name."
+    },
+    "artwork_url": {
+      "type": ["string", "null"],
+      "description": "Artwork image URL (snake_case variant, preferred in server broadcasts)."
+    },
+    "artworkUrl": {
+      "type": ["string", "null"],
+      "description": "Artwork image URL (camelCase variant, used by Android Sender)."
+    },
+    "duration_ms": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Track duration in milliseconds (snake_case variant)."
+    },
+    "durationMs": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Track duration in milliseconds (camelCase variant, used by Android Sender)."
+    },
+    "position_ms": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Current playback position in milliseconds (snake_case variant)."
+    },
+    "positionMs": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Current playback position in milliseconds (camelCase variant, used by Android Sender)."
+    },
+    "is_playing": {
+      "type": "boolean",
+      "description": "Whether playback is currently active (snake_case variant)."
+    },
+    "isPlaying": {
+      "type": "boolean",
+      "description": "Whether playback is currently active (camelCase variant, used by Android Sender)."
+    }
+  },
+  "additionalProperties": true
+}

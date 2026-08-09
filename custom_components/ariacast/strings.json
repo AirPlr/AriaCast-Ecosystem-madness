@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up AriaCast Direct",
+        "description": "Registers every AriaCast speaker discovered on the LAN as a native media_player.",
+        "data": {
+          "ha_mode": "Enable HA Mode (companion app room/area sync)",
+          "addon_base_url": "AriaCast Core add-on URL (enables TTS ducking + spatial DSP audio path)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "AriaCast Direct is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "ha_mode": "Enable HA Mode (companion app room/area sync)"
+        }
+      }
+    }
+  },
+  "services": {
+    "set_room_layout": {
+      "name": "Set room layout",
+      "description": "Create or update a room's 2D dimensions and Home Assistant Area mapping."
+    },
+    "set_listener_position": {
+      "name": "Set listener position",
+      "description": "Update the tracked listener position, triggering a spatial DSP recompute."
+    },
+    "sync_ha_areas": {
+      "name": "Sync Home Assistant Areas",
+      "description": "Import every Home Assistant Area as an AriaCast room."
+    }
+  }
+}

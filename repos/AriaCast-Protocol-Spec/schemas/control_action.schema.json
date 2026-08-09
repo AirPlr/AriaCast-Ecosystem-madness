@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ariacast.org/schemas/control_action.schema.json",
+  "title": "AriaCast Control Action Message",
+  "description": "JSON text frame sent by the Receiver to all /control WebSocket clients (including the Sender). Also the format used by POST /api/command and by _cmd_play/_cmd_pause etc. on the Python server.",
+  "type": "object",
+  "required": ["action"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["play", "pause", "next", "previous", "stop", "toggle", "seek"],
+      "description": "Playback command to execute."
+    },
+    "position_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Target position in milliseconds. Required when action is 'seek'."
+    }
+  },
+  "if": {
+    "properties": { "action": { "const": "seek" } },
+    "required": ["action"]
+  },
+  "then": {
+    "required": ["position_ms"]
+  },
+  "additionalProperties": true
+}
