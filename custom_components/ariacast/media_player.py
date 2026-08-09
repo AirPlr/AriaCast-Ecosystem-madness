@@ -20,6 +20,7 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -261,7 +262,7 @@ class AriaCastMediaPlayer(MediaPlayerEntity):
                 await client.push_metadata({"title": "Notification", "is_playing": True})
             return
 
-        session = self.hass.helpers.aiohttp_client.async_get_clientsession()
+        session = async_get_clientsession(self.hass)
         await session.post(
             f"{addon_base}/api/notify",
             json={"speaker_id": self._speaker_id, "media_id": media_id, "media_type": str(media_type)},
