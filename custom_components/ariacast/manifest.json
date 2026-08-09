@@ -7,6 +7,6 @@
   "issue_tracker": "https://github.com/AirPlr/AriaCast-Ecosystem-madness/issues",
   "iot_class": "local_push",
   "integration_type": "hub",
-  "requirements": ["aiosqlite>=0.19.0", "zeroconf>=0.131.0", "Pillow>=10.0.0", "numpy>=1.24.0"],
+  "requirements": ["aiosqlite>=0.19.0", "zeroconf>=0.131.0", "ifaddr>=0.2.0", "Pillow>=10.0.0", "numpy>=1.24.0"],
   "version": "0.1.0"
 }

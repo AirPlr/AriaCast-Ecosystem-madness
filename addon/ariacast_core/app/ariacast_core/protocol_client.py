@@ -17,6 +17,7 @@ integration.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import socket
@@ -67,8 +68,37 @@ class DiscoveredSpeaker:
     version: str = ""
 
 
+def _broadcast_targets() -> list[str]:
+    """Every local interface's subnet broadcast address, plus the global
+    255.255.255.255 fallback for simple single-NIC setups.
+
+    A plain `sendto(..., ("255.255.255.255", PORT))` only leaves via
+    whichever interface the kernel picks for the default route, so a
+    receiver on a second NIC/VLAN (e.g. wired AriaCast hardware while HA's
+    default route is Wi-Fi, or vice versa) never sees the broadcast even
+    though it's on a directly-attached subnet. Sending to each interface's
+    own subnet-directed broadcast address instead reaches all of them.
+    """
+    targets = {"255.255.255.255"}
+    try:
+        import ifaddr
+
+        for adapter in ifaddr.get_adapters():
+            for ip in adapter.ips:
+                if not ip.is_IPv4 or not isinstance(ip.ip, str) or ip.ip.startswith("127."):
+                    continue
+                try:
+                    network = ipaddress.ip_interface(f"{ip.ip}/{ip.network_prefix}").network
+                    targets.add(str(network.broadcast_address))
+                except ValueError:
+                    continue
+    except ImportError:
+        logger.debug("ifaddr not installed; falling back to the global broadcast address only")
+    return sorted(targets)
+
+
 async def discover_udp(timeout: float = 2.0, attempts: int = 1) -> list[DiscoveredSpeaker]:
-    """Broadcast DISCOVER_AUDIOCAST and collect UDP responses."""
+    """Broadcast DISCOVER_AUDIOCAST on every local interface and collect UDP responses."""
     loop = asyncio.get_event_loop()
     found: dict[str, DiscoveredSpeaker] = {}
 
@@ -98,9 +128,11 @@ async def discover_udp(timeout: float = 2.0, attempts: int = 1) -> list[Discover
     sock: socket.socket = transport.get_extra_info("socket")
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
+    magic = DISCOVERY_MAGIC.encode("utf-8")
     try:
         for _ in range(max(1, attempts)):
-            transport.sendto(DISCOVERY_MAGIC.encode("utf-8"), ("255.255.255.255", DISCOVERY_PORT))
+            for target in _broadcast_targets():
+                transport.sendto(magic, (target, DISCOVERY_PORT))
             await asyncio.sleep(timeout)
     finally:
         transport.close()

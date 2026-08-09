@@ -15,8 +15,11 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
+    CONF_ADDON_URL,
+    CONF_HA_MODE,
     DATA_DB,
     DATA_DSP,
+    DATA_HA_BRIDGE_SYNC,
     DATA_HUE_SYNC,
     DATA_NODE_MANAGER,
     DATA_PUBSUB,
@@ -28,6 +31,7 @@ from .const import (
     SERVICE_SYNC_HA_AREAS,
 )
 from .coordinator import AriaCastCoordinator
+from .ha_bridge_sync import HaBridgeSync
 from .core.database import DatabaseService
 from .core.dsp import RoomSpatialAudioDSP
 from .core.hue_sync import AlbumArtHueSync
@@ -87,8 +91,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DATA_PUBSUB: pubsub,
         "coordinator": coordinator,
     }
-    if entry.data.get("addon_base_url"):
-        hass.data[DOMAIN]["addon_base_url"] = entry.data["addon_base_url"]
+
+    addon_base_url = entry.options.get(CONF_ADDON_URL, entry.data.get(CONF_ADDON_URL))
+    ha_mode = entry.options.get(CONF_HA_MODE, entry.data.get(CONF_HA_MODE, True))
+    if addon_base_url:
+        hass.data[DOMAIN]["addon_base_url"] = addon_base_url
+    if addon_base_url and ha_mode:
+        bridge_sync = HaBridgeSync(hass, addon_base_url)
+        bridge_sync.start()
+        hass.data[DOMAIN][entry.entry_id][DATA_HA_BRIDGE_SYNC] = bridge_sync
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _register_services(hass, db, dsp)
@@ -99,6 +110,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         data = hass.data[DOMAIN].pop(entry.entry_id)
+        bridge_sync = data.get(DATA_HA_BRIDGE_SYNC)
+        if bridge_sync:
+            bridge_sync.stop()
         await data[DATA_NODE_MANAGER].stop()
         await data[DATA_PUBSUB].stop()
         await data[DATA_DB].stop()
