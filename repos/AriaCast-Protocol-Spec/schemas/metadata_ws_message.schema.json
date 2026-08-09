@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ariacast.org/schemas/metadata_ws_message.schema.json",
+  "title": "AriaCast Metadata WebSocket Message",
+  "description": "JSON text frames exchanged on the /metadata WebSocket endpoint.",
+  "oneOf": [
+    {
+      "title": "metadata broadcast (server → subscribers)",
+      "description": "Sent by the server on connect and on every metadata change.",
+      "type": "object",
+      "required": ["type", "data"],
+      "properties": {
+        "type": { "const": "metadata" },
+        "data": { "$ref": "metadata_object.schema.json" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "update (client → server)",
+      "description": "Client pushes a partial or full metadata update.",
+      "type": "object",
+      "required": ["type", "data"],
+      "properties": {
+        "type": { "const": "update" },
+        "data": { "$ref": "metadata_object.schema.json" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "get (client → server)",
+      "description": "Client requests the current metadata state.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "get" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "clear (client → server)",
+      "description": "Client clears all metadata.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "clear" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "ack (server → client)",
+      "description": "Server acknowledges an update or clear request.",
+      "type": "object",
+      "required": ["type", "success"],
+      "properties": {
+        "type": { "const": "ack" },
+        "success": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "error (server → client)",
+      "description": "Server reports an error processing the last client message.",
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "const": "error" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

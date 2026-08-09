@@ -1,0 +1,3 @@
+{
+  "$comment": "DEPRECATED: This schema described the 'welcome' message which does not exist in the actual implementations. See handshake_ready.schema.json for the actual /audio handshake message."
+}

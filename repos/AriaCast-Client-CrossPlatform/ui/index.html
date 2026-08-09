@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AriaCast</title>
+    <style>
+        :root {
+            --bg-color: #110d21;
+            --panel-color: #1e1b36;
+            --text-color: #e0e0e0;
+            --accent-start: #7e57c2;
+            --accent-end: #ab47bc;
+            --glass-bg: rgba(30, 27, 54, 0.85);
+            --border-radius: 12px;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: radial-gradient(circle at top left, #2c254e, var(--bg-color));
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            box-sizing: border-box;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .header {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 0 10px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(90deg, #bb86fc, #03dac6);
+            /* -webkit-background-clip: text; */
+            /* -webkit-text-fill-color: transparent; */
+            color: white; 
+            letter-spacing: -0.5px;
+            padding: 3%;
+            border-radius: 10%;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-icon {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            color: white;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .btn-icon:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Main Panel */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border-radius: var(--border-radius);
+            padding: 24px;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .status-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(0,0,0,0.2);
+            padding: 12px;
+            border-radius: 12px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: #ff5252;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #ff5252;
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.active {
+            background: #00e676;
+            box-shadow: 0 0 15px #00e676;
+        }
+
+        .status-text {
+            font-size: 14px;
+            opacity: 0.8;
+            flex-grow: 1;
+        }
+
+        .server-info {
+            font-size: 12px;
+            opacity: 0.5;
+            text-align: right;
+        }
+
+        /* Discovery */
+        .server-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 0;
+        }
+
+        .server-list-header label {
+            margin: 0;
+        }
+
+        .server-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 140px;
+            overflow-y: auto;
+        }
+
+        .server-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .server-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .server-item.selected {
+            background: rgba(126, 87, 194, 0.25);
+            border-color: var(--accent-start);
+        }
+
+        .server-name {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .server-addr {
+            font-size: 11px;
+            opacity: 0.5;
+        }
+
+        .server-list-empty {
+            font-size: 12px;
+            opacity: 0.5;
+            text-align: center;
+            padding: 12px 0;
+        }
+
+        /* Controls */
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.6;
+            margin-left: 4px;
+        }
+
+        /* Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+        }
+
+        /* Big Button */
+        .action-btn {
+            background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+            border: none;
+            border-radius: 12px;
+            padding: 16px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, filter 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            box-shadow: 0 5px 15px rgba(126, 87, 194, 0.4);
+        }
+
+        .action-btn:hover {
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+        }
+
+        .action-btn:active {
+            transform: translateY(0);
+        }
+
+        .action-btn.stop {
+            background: linear-gradient(135deg, #ef5350, #b71c1c);
+            box-shadow: 0 5px 15px rgba(239, 83, 80, 0.4);
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: auto;
+            font-size: 11px;
+            opacity: 0.3;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="header" onmousedown="window.hdrDrag(event)">
+        <div class="title"> AriaCast Client </div>
+        <div class="controls">
+            <button class="btn-icon" onclick="window.minimize()">_</button>
+            <button class="btn-icon" onclick="window.closeApp()">×</button> 
+        </div>
+    </div>
+
+    <div class="glass-panel">
+        <div class="status-container">
+            <div id="statusDot" class="status-dot"></div>
+            <div class="status-text" id="statusText">Ready to connect</div>
+        </div>
+        <div class="server-info" id="serverInfo">Not Connected</div>
+
+        <div class="control-group">
+            <div class="server-list-header">
+                <label>Servers</label>
+                <button class="btn-icon" onclick="window.refreshDiscovery()" title="Refresh">&#8635; Refresh</button>
+            </div>
+            <div id="serverList" class="server-list">
+                <div class="server-list-empty">Searching for AriaCast servers&hellip;</div>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Volume Boost</label>
+            <input type="range" min="0" max="200" value="100" id="volumeSlider" oninput="updateVolume(this.value)">
+            <div style="display:flex; justify-content:space-between; font-size:11px; opacity:0.5; padding:0 4px;">
+                <span>Quiet</span>
+                <span>Normal</span>
+                <span>Boost</span>
+            </div>
+        </div>
+
+        <button id="mainBtn" class="action-btn" onclick="toggleStream()">
+            <span>START STREAMING</span>
+        </button>
+    </div>
+
+    <div class="footer">
+        v5.0.0 &bull; AriaCast Protocol
+    </div>
+
+    <script>
+        let isStreaming = false;
+
+        function updateVolume(val) {
+            if (window.setVolume) {
+                window.setVolume(parseFloat(val));
+            }
+        }
+
+        function toggleStream() {
+            if (!isStreaming) {
+                // Change to Stop state
+                if (window.startStream) window.startStream();
+                setStreamingState(true);
+            } else {
+                if (window.stopStream) window.stopStream();
+                setStreamingState(false);
+            }
+        }
+
+        function setStreamingState(active) {
+            isStreaming = active;
+            const btn = document.getElementById('mainBtn');
+            const dot = document.getElementById('statusDot');
+            
+            if (active) {
+                btn.classList.add('stop');
+                btn.querySelector('span').innerText = "STOP STREAMING";
+                dot.classList.add('active');
+            } else {
+                btn.classList.remove('stop');
+                btn.querySelector('span').innerText = "START STREAMING";
+                dot.classList.remove('active');
+            }
+        }
+
+        // Called from Go
+        function updateStatus(msg) {
+            document.getElementById('statusText').innerText = msg;
+            if (msg.includes("Streaming Active")) {
+                setStreamingState(true);
+            } else if (msg.includes("Stopped") || msg.includes("Error") || msg.includes("Disconnected")) {
+                setStreamingState(false);
+            }
+        }
+
+        function updateServerInfo(msg) {
+            document.getElementById('serverInfo').innerText = msg;
+        }
+
+        // Discovery
+        let selectedServerName = null;
+
+        // Called from Go whenever the discovery list changes
+        function updateServerList(servers) {
+            const container = document.getElementById('serverList');
+            container.innerHTML = '';
+
+            if (!servers || servers.length === 0) {
+                container.innerHTML = '<div class="server-list-empty">No AriaCast servers found &mdash; try Refresh</div>';
+                return;
+            }
+
+            servers.forEach(function (server) {
+                const item = document.createElement('div');
+                item.className = 'server-item' + (server.server_name === selectedServerName ? ' selected' : '');
+                item.onclick = function () { selectDiscoveredServer(server.server_name); };
+
+                const name = document.createElement('span');
+                name.className = 'server-name';
+                name.innerText = server.server_name;
+
+                const addr = document.createElement('span');
+                addr.className = 'server-addr';
+                addr.innerText = server.ip + ':' + server.port;
+
+                item.appendChild(name);
+                item.appendChild(addr);
+                container.appendChild(item);
+            });
+        }
+
+        function selectDiscoveredServer(name) {
+            selectedServerName = name;
+            if (window.selectServer) window.selectServer(name);
+
+            document.querySelectorAll('#serverList .server-item').forEach(function (el) {
+                const nameEl = el.querySelector('.server-name');
+                el.classList.toggle('selected', !!nameEl && nameEl.innerText === name);
+            });
+        }
+
+        window.refreshDiscovery = function () {
+            selectedServerName = null;
+            if (window.refreshServers) window.refreshServers();
+        }
+
+        // Pull the current discovery snapshot once on load, in case a server
+        // was already found before this script ran (live updates via
+        // updateServerList still arrive as they happen after this).
+        if (window.getServers) {
+            window.getServers().then(updateServerList);
+        }
+
+         // Window Controls Sim via Go bindings
+         window.minimize = function() {
+             if (window.appMinimize) window.appMinimize();
+        }
+        window.closeApp = function() {
+            if (window.appClose) window.appClose();
+        }
+        window.hdrDrag = function(e) {
+            // Only left mouse
+            if (e.button !== 0) return;
+            // Not if clicking buttons
+            if (e.target.tagName === 'BUTTON') return;
+            
+            if (window.startDrag) window.startDrag();
+        }
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ariacast.org/schemas/metadata_http_request.schema.json",
+  "title": "AriaCast POST /metadata Request Body",
+  "description": "HTTP request body for the POST /metadata endpoint. The Android Sender wraps the metadata inside a 'data' envelope. Both servers also accept a flat (non-wrapped) metadata object.",
+  "oneOf": [
+    {
+      "title": "wrapped (Android Sender format)",
+      "type": "object",
+      "required": ["data"],
+      "properties": {
+        "data": { "$ref": "metadata_object.schema.json" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "title": "flat (also accepted)",
+      "$ref": "metadata_object.schema.json"
+    }
+  ]
+}

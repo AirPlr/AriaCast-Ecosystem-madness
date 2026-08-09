@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ariacast.org/schemas/control_handshake.schema.json",
+  "title": "AriaCast Control Handshake (Python server)",
+  "description": "JSON text frame sent by the Python server immediately after a /control WebSocket upgrade.",
+  "type": "object",
+  "required": ["status"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "const": "READY",
+      "description": "Always 'READY'."
+    },
+    "volume_available": {
+      "type": "boolean",
+      "description": "Whether OS-level volume control is available on this receiver."
+    },
+    "current_volume": {
+      "type": "integer",
+      "minimum": -1,
+      "maximum": 100,
+      "description": "Current system volume (0-100), or -1 if unavailable."
+    }
+  },
+  "additionalProperties": true
+}
