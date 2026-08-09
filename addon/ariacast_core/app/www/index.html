@@ -6,40 +6,239 @@
 <title>AriaCast — Room Editor</title>
 <style>
   :root {
-    --bg: #101418; --panel: #171c22; --panel-2: #1e242b; --border: #2a323b;
-    --text: #e8edf2; --muted: #8b98a5; --accent: #4fc3f7; --online: #4caf50;
-    --offline: #616161; --unavailable: #e53935; --grid: #232a31;
+    --bg: #0d1013; --panel: #171c22; --panel-2: #1e242b; --panel-3: #262e37; --border: #2a323b;
+    --text: #e8edf2; --muted: #8b98a5; --muted-2: #5f6b78; --accent: #4fc3f7; --accent-2: #29b6f6;
+    --online: #4caf50; --offline: #616161; --unavailable: #e53935; --grid: #1c2229;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    --radius: 10px; --radius-lg: 16px;
   }
+
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
-  #layout { display: grid; grid-template-columns: 260px 1fr 300px; height: 100vh; }
-  .panel { background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; padding: 12px; }
-  .panel h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 4px 0 10px; }
-  .room-item { padding: 8px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
-  .room-item:hover { background: var(--panel-2); }
-  .room-item.active { background: var(--accent); color: #05222e; font-weight: 600; }
-  .room-item small { opacity: 0.7; font-weight: 400; }
-  button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 0.85rem; }
-  button:hover { border-color: var(--accent); }
-  button.primary { background: var(--accent); color: #05222e; border-color: var(--accent); font-weight: 600; }
-  #canvas-wrap { position: relative; display: flex; align-items: center; justify-content: center; overflow: auto; }
-  canvas { background: repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 40px),
-                        repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 40px), #0b0e11;
-           border-radius: 12px; border: 1px solid var(--border); cursor: crosshair; }
-  .field { margin-bottom: 10px; }
-  .field label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 3px; }
-  .field input, .field select { width: 100%; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 8px; }
-  .speaker-row { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; background: var(--panel-2); margin-bottom: 6px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-  .dot.online { background: var(--online); box-shadow: 0 0 6px var(--online); }
+  *::selection { background: var(--accent); color: #05222e; }
+
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(79, 195, 247, 0.06), transparent 60%),
+      radial-gradient(900px 500px at 110% 110%, rgba(79, 195, 247, 0.04), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--panel-3); border-radius: 999px; border: 2px solid var(--panel); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted-2); }
+  * { scrollbar-width: thin; scrollbar-color: var(--panel-3) transparent; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  #layout {
+    display: grid;
+    grid-template-columns: 260px 1fr 300px;
+    height: 100vh;
+    gap: 1px;
+    background: var(--border);
+  }
+
+  .panel {
+    background: var(--panel);
+    overflow-y: auto;
+    padding: 16px 14px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel h2 {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 4px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .room-item {
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid transparent;
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  }
+  .room-item:hover { background: var(--panel-2); border-color: var(--border); }
+  .room-item:active { transform: scale(0.99); }
+  .room-item.active {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #05222e;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(79, 195, 247, 0.25);
+  }
+  .room-item.active small { color: #05222e; }
+  .room-item small { opacity: 0.7; font-weight: 500; font-size: 0.72rem; }
+
+  button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
+  }
+  button:hover { border-color: var(--accent); background: var(--panel-3); }
+  button:active { transform: scale(0.97); }
+  button.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #05222e;
+    border-color: transparent;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(79, 195, 247, 0.2);
+  }
+  button.primary:hover { filter: brightness(1.08); background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+
+  #canvas-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    padding: 28px;
+    background:
+      radial-gradient(ellipse at center, rgba(255, 255, 255, 0.015), transparent 70%);
+  }
+
+  canvas {
+    background:
+      repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 40px),
+      repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 40px), #0a0d10;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    cursor: crosshair;
+    box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    transition: box-shadow 0.2s ease;
+  }
+  canvas:hover { box-shadow: var(--shadow), 0 0 0 1px rgba(79, 195, 247, 0.15); }
+
+  #empty-state {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    color: var(--muted);
+    text-align: center;
+    pointer-events: none;
+  }
+  #empty-state.visible { display: flex; }
+  #empty-state .icon { font-size: 2.4rem; opacity: 0.5; }
+  #empty-state p { margin: 0; font-size: 0.85rem; max-width: 220px; }
+
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 0.72rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; letter-spacing: 0.02em; }
+  .field input, .field select {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.88rem;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+  .field input:hover, .field select:hover { border-color: var(--muted-2); }
+  .field input:focus, .field select:focus { border-color: var(--accent); background: var(--panel-3); outline: none; }
+
+  .speaker-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-radius: var(--radius);
+    background: var(--panel-2);
+    margin-bottom: 6px;
+    border-left: 3px solid transparent;
+    transition: background-color 0.15s ease, border-left-color 0.15s ease, transform 0.1s ease;
+  }
+  .speaker-row:hover { background: var(--panel-3); transform: translateX(2px); }
+  .speaker-row.online { border-left-color: var(--online); }
+  .speaker-row.offline { border-left-color: var(--offline); }
+  .speaker-row.unavailable { border-left-color: var(--unavailable); }
+  .speaker-row .name { font-weight: 600; font-size: 0.85rem; }
+
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .dot.online { background: var(--online); box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.18); animation: pulse-online 2.4s ease-in-out infinite; }
   .dot.offline { background: var(--offline); }
-  .dot.unavailable { background: var(--unavailable); }
-  .speaker-meta { font-size: 0.72rem; color: var(--muted); }
-  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-  .badge { font-size: 0.68rem; padding: 2px 6px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
-  #status-bar { position: absolute; top: 10px; left: 10px; font-size: 0.72rem; color: var(--muted); background: rgba(0,0,0,0.4); padding: 4px 8px; border-radius: 6px; }
-  .legend { display: flex; gap: 12px; font-size: 0.72rem; color: var(--muted); margin-top: 8px; }
-  .legend span { display: flex; align-items: center; gap: 4px; }
+  .dot.unavailable { background: var(--unavailable); box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.18); }
+
+  @keyframes pulse-online {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.18); }
+    50% { box-shadow: 0 0 0 5px rgba(76, 175, 80, 0.06); }
+  }
+
+  .speaker-meta { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+
+  .badge {
+    font-size: 0.66rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--panel-3);
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+
+  #status-bar {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--muted);
+    background: rgba(15, 18, 22, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    padding: 5px 10px 5px 8px;
+    border-radius: 999px;
+    z-index: 2;
+  }
+  #status-bar::before {
+    content: "";
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--unavailable);
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  #status-bar.live::before { background: var(--online); box-shadow: 0 0 6px var(--online); }
+  #status-bar.live { color: var(--text); }
+
+  .legend { display: flex; gap: 14px; font-size: 0.72rem; color: var(--muted); margin-top: 10px; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+
+  hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+
+  @media (max-width: 900px) {
+    #layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; height: auto; min-height: 100vh; }
+    #canvas-wrap { padding: 16px; }
+  }
 </style>
 </head>
 <body>
@@ -60,6 +259,10 @@
   <div id="canvas-wrap">
     <div id="status-bar">disconnected</div>
     <canvas id="canvas" width="760" height="600"></canvas>
+    <div id="empty-state">
+      <div class="icon">🏠</div>
+      <p>No room selected. Create a room on the left to start placing speakers.</p>
+    </div>
   </div>
 
   <div class="panel" style="border-right:none; border-left:1px solid var(--border)">
@@ -70,7 +273,8 @@
       <span><i class="dot offline"></i>offline</span>
       <span><i class="dot unavailable"></i>unavailable</span>
     </div>
-    <h2 style="margin-top:20px">Listener</h2>
+    <hr class="divider" />
+    <h2>Listener</h2>
     <p class="speaker-meta">Drag the cyan marker on the canvas, or click anywhere in the room, to set the tracked listener position and trigger a spatial DSP recompute.</p>
   </div>
 </div>
@@ -98,8 +302,12 @@ async function api(method, path, body) {
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen = () => $('#status-bar').textContent = 'live';
-  ws.onclose = () => { $('#status-bar').textContent = 'reconnecting…'; setTimeout(connectWS, 1500); };
+  ws.onopen = () => { $('#status-bar').textContent = 'live'; $('#status-bar').classList.add('live'); };
+  ws.onclose = () => {
+    $('#status-bar').textContent = 'reconnecting…';
+    $('#status-bar').classList.remove('live');
+    setTimeout(connectWS, 1500);
+  };
   ws.onmessage = (evt) => {
     const msg = JSON.parse(evt.data);
     if (msg.type === 'snapshot') {
@@ -163,10 +371,10 @@ function renderSpeakerList() {
   el.innerHTML = '';
   list.forEach((s) => {
     const row = document.createElement('div');
-    row.className = 'speaker-row';
+    row.className = `speaker-row ${s.status}`;
     row.innerHTML = `<span class="dot ${s.status}"></span>
       <div style="flex:1">
-        <div>${s.name}</div>
+        <div class="name">${s.name}</div>
         <div class="speaker-meta">${s.ip_address}:${s.port} · gain ${Number(s.gain_db).toFixed(1)}dB · delay ${Number(s.delay_ms).toFixed(0)}ms</div>
       </div>`;
     el.appendChild(row);
@@ -187,8 +395,16 @@ function statusColor(status) {
 
 function renderCanvas() {
   const room = currentRoom();
+  const empty = $('#empty-state');
+  if (!room) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.style.visibility = 'hidden';
+    empty.classList.add('visible');
+    return;
+  }
+  canvas.style.visibility = 'visible';
+  empty.classList.remove('visible');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!room) return;
   roomToCanvasScale(room);
 
   // room border
