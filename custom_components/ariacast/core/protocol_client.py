@@ -38,8 +38,19 @@ MDNS_SERVICE_TYPE = "_audiocast._tcp.local."
 # though the JSON control protocol itself defines no heartbeat. Using the
 # transport-level ping avoids inventing a protocol extension that older
 # receivers would have to understand.
+#
+# HEARTBEAT_TIMEOUT_S is passed as `timeout=` to aiohttp's `ws_connect`,
+# which (in the aiohttp version this runs against) doubles as the
+# pong-wait timeout, not just the initial handshake timeout. At 4.0s this
+# was tight enough that real-world LAN jitter (observed: a receiver one
+# router hop away, not even cross-subnet) made the connection flap
+# online/offline every 4-5 seconds even though the receiver was up and
+# actually responsive the whole time — confirmed via
+# node_manager transition log spam at ~4s intervals. 10s gives enough
+# slack for that jitter while still catching a genuinely dead receiver
+# well within the original 6s OFFLINE_GRACE_S buffer below it.
 HEARTBEAT_INTERVAL_S = 1.5
-HEARTBEAT_TIMEOUT_S = 4.0
+HEARTBEAT_TIMEOUT_S = 10.0
 
 
 def _normalize_metadata(data: dict[str, Any]) -> dict[str, Any]:
