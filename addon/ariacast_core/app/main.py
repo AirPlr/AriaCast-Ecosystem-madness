@@ -15,17 +15,25 @@ from pathlib import Path
 
 from aiohttp import web
 
-from ariacast_core.database import DatabaseService
-from ariacast_core.dsp import RoomSpatialAudioDSP
-from ariacast_core.hue_sync import AlbumArtHueSync
-from ariacast_core.models import Light, Room, Speaker
-from ariacast_core.node_manager import SpeakerNodeManager
-from ariacast_core.pubsub import PubSubServer
-
-from socket_server import AriaCastSocketServer
-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("ariacast_core.main")
+
+try:
+    from ariacast_core.database import DatabaseService
+    from ariacast_core.dsp import RoomSpatialAudioDSP
+    from ariacast_core.hue_sync import AlbumArtHueSync
+    from ariacast_core.models import Light, Room, Speaker
+    from ariacast_core.node_manager import SpeakerNodeManager
+    from ariacast_core.pubsub import PubSubServer
+
+    from socket_server import AriaCastSocketServer
+except Exception as exc:  # pragma: no cover - startup diagnostics
+    # Supervisor's add-on log fetch truncates long output, and the default
+    # traceback for a failed C-extension import (e.g. numpy) can run to
+    # thousands of characters — log a short, truncation-surviving summary
+    # instead of letting the full traceback push the actual cause out.
+    logger.error("Startup import failed: %s: %s", type(exc).__name__, str(exc)[-600:])
+    raise SystemExit(1) from None
 
 DB_PATH = os.environ.get("ARIACAST_DB_PATH", "/data/ariacast.db")
 WEB_PORT = int(os.environ.get("ARIACAST_WEB_PORT", "8099"))
