@@ -105,21 +105,18 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
 
     async def upsert_room(request: web.Request) -> web.Response:
         body = await request.json()
-        room_id = body.get("id")
-        # Look the existing row up by id when given (the Web UI Save button
-        # always sends one for a room it already knows about), else by
-        # ha_area_id (the HA area sync's only key, since it never knows a
-        # room's id). Either way, anything the caller didn't explicitly
-        # include falls back to what's already stored — a caller that only
-        # cares about one slice of a room (name/size here, the effects
-        # chain in set_room_effects below) must not silently blank out the
-        # rest. This previously wasn't true for ha_area_id itself: the Web
-        # UI's Save button never sends it, so editing an HA-linked room's
-        # name/size used to null out its ha_area_id — silently orphaning it
-        # and leaving the next HA sync to mint a duplicate for that area.
-        existing = await db.get_room(room_id) if room_id else None
-        if existing is None and body.get("ha_area_id"):
-            existing = await db.get_room_by_ha_area_id(body["ha_area_id"])
+        ha_area_id = body.get("ha_area_id")
+        existing = None
+        if ha_area_id and not body.get("id"):
+            existing = await db.get_room_by_ha_area_id(ha_area_id)
+            if existing is None:
+                # No room already tracks this HA area, but a same-named
+                # ha_area_id-less room might be a pre-HA-Mode orphan (Web UI
+                # room, or a leftover duplicate from a past bug) rather than
+                # a genuinely distinct room — adopt it instead of minting a
+                # new row, so orphans self-heal on the next sync instead of
+                # piling up indefinitely.
+                existing = await db.get_orphan_room_by_name(body["name"])
         room = Room(
             id=room_id or (existing.id if existing else db.new_id()),
             name=body.get("name", existing.name if existing else body["name"]),
@@ -137,38 +134,9 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
         await db.upsert_room(room)
         return web.json_response(room.__dict__)
 
-    async def set_room_effects(request: web.Request) -> web.Response:
-        room_id = request.match_info["room_id"]
-        body = await request.json()
-        existing = await db.get_room(room_id)
-        if not existing:
-            return web.json_response({"error": "not found"}, status=404)
-
-        preset_name = body.get("preset")
-        preset = EFFECTS_PRESETS.get(preset_name) if preset_name else None
-        if preset_name and preset is None:
-            return web.json_response({"error": f"unknown preset '{preset_name}'"}, status=400)
-
-        values = {**preset} if preset else {}
-        for field_name in (
-            "eq_bass_db", "eq_mid_db", "eq_treble_db", "reverb_wet", "reverb_size", "compressor_enabled"
-        ):
-            if field_name in body:
-                values[field_name] = body[field_name]
-
-        existing.eq_bass_db = float(values.get("eq_bass_db", existing.eq_bass_db))
-        existing.eq_mid_db = float(values.get("eq_mid_db", existing.eq_mid_db))
-        existing.eq_treble_db = float(values.get("eq_treble_db", existing.eq_treble_db))
-        existing.reverb_wet = float(values.get("reverb_wet", existing.reverb_wet))
-        existing.reverb_size = float(values.get("reverb_size", existing.reverb_size))
-        existing.compressor_enabled = bool(values.get("compressor_enabled", existing.compressor_enabled))
-        existing.effects_preset = preset_name or existing.effects_preset
-
-        updated = await db.update_room_effects(existing)
-        if updated:
-            await socket_server.update_room_effects(updated)
-            return web.json_response(updated.__dict__)
-        return web.json_response({"error": "not found"}, status=404)
+    async def delete_room(request: web.Request) -> web.Response:
+        await db.delete_room(request.match_info["room_id"])
+        return web.json_response({"ok": True})
 
     async def list_speakers(request: web.Request) -> web.Response:
         room_id = request.query.get("room_id")
@@ -276,8 +244,7 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
 
     app.router.add_get("/api/rooms", list_rooms)
     app.router.add_post("/api/rooms", upsert_room)
-    app.router.add_post("/api/rooms/{room_id}/effects", set_room_effects)
-    app.router.add_get("/api/effects/presets", list_effects_presets)
+    app.router.add_delete("/api/rooms/{room_id}", delete_room)
     app.router.add_get("/api/speakers", list_speakers)
     app.router.add_post("/api/speakers/{speaker_id}/position", update_speaker_position)
     app.router.add_post("/api/speakers/{speaker_id}/calibration", set_speaker_calibration)
