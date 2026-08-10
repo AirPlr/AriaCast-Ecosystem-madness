@@ -40,6 +40,10 @@ class PubSubServer:
             await ws.close()
         self._clients.clear()
 
+    @property
+    def client_count(self) -> int:
+        return len(self._clients)
+
     async def _on_db_event(self, event: dict[str, Any]) -> None:
         await self.broadcast({"type": "db_event", **event})
 
