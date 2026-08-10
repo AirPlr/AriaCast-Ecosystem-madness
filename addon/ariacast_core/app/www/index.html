@@ -191,6 +191,21 @@
   }
 
   .speaker-meta { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+
+  .picker-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 8px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+  .picker-row:hover { background: var(--panel-2); }
+  .picker-row input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+  .picker-row .picker-name { font-size: 0.82rem; flex: 1; }
+  .picker-row .picker-elsewhere { font-size: 0.68rem; color: var(--muted); }
+  .picker-row .dot { flex-shrink: 0; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
 
   .badge {
@@ -329,6 +344,12 @@
       <span><i class="dot offline"></i>offline</span>
       <span><i class="dot unavailable"></i>unavailable</span>
     </div>
+
+    <hr class="divider" />
+    <h2>Add Speakers to Room</h2>
+    <p class="speaker-meta">Build a room out of any combination of speakers — check a speaker to add it here (it'll drop in at the room's center; drag it into place on the canvas afterward). A speaker already in another room moves here instead of duplicating.</p>
+    <div id="speaker-picker"></div>
+
     <hr class="divider" />
     <h2>Listener</h2>
     <p class="speaker-meta">Drag the cyan marker on the canvas, or click anywhere in the room, to set the tracked listener position and trigger a spatial DSP recompute.</p>
@@ -428,8 +449,40 @@ function renderAll() {
   renderRoomList();
   renderRoomForm();
   renderSpeakerList();
+  renderSpeakerPicker();
   renderEffectsPanel();
   renderCanvas();
+}
+
+function renderSpeakerPicker() {
+  const room = currentRoom();
+  const el = $('#speaker-picker');
+  el.innerHTML = '';
+  state.speakers.forEach((s) => {
+    const inThisRoom = s.room_id === activeRoomId;
+    const elsewhereRoom = !inThisRoom && s.room_id ? state.rooms.find((r) => r.id === s.room_id) : null;
+
+    const row = document.createElement('label');
+    row.className = 'picker-row';
+    row.innerHTML = `<input type="checkbox" ${inThisRoom ? 'checked' : ''} ${room ? '' : 'disabled'} />
+      <span class="dot ${s.status}"></span>
+      <span class="picker-name">${s.name}</span>
+      ${elsewhereRoom ? `<span class="picker-elsewhere">in ${elsewhereRoom.name}</span>` : ''}`;
+
+    row.querySelector('input').onchange = (evt) => {
+      if (!room) return;
+      if (evt.target.checked) {
+        api('POST', `/api/speakers/${s.id}/position`, {
+          room_id: room.id,
+          pos_x: room.width_meters / 2,
+          pos_y: room.height_meters / 2,
+        });
+      } else {
+        api('POST', `/api/speakers/${s.id}/position`, { room_id: null });
+      }
+    };
+    el.appendChild(row);
+  });
 }
 
 function renderEffectsPanel() {

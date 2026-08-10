@@ -181,6 +181,7 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
         speaker = await db.get_speaker(speaker_id)
         if not speaker:
             return web.json_response({"error": "not found"}, status=404)
+        old_room_id = speaker.room_id
         speaker.pos_x = float(body.get("pos_x", speaker.pos_x))
         speaker.pos_y = float(body.get("pos_y", speaker.pos_y))
         speaker.orientation_deg = float(body.get("orientation_deg", speaker.orientation_deg))
@@ -189,6 +190,12 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
         await db.upsert_speaker(speaker)
         if speaker.room_id:
             await dsp.recompute_room(speaker.room_id)
+        if old_room_id and old_room_id != speaker.room_id:
+            # The speaker-picker checklist can move a speaker straight out of
+            # whatever room it was in — rebalance that room's remaining
+            # speakers immediately instead of leaving them on stale gain/delay
+            # values until the next periodic DSP tick (up to DSP_TICK_S away).
+            await dsp.recompute_room(old_room_id)
         return web.json_response({**speaker.__dict__, "status": speaker.status.value})
 
     async def list_lights(request: web.Request) -> web.Response:
