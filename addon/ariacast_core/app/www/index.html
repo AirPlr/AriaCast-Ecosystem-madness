@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg: #0d1013; --panel: #171c22; --panel-2: #1e242b; --panel-3: #262e37; --border: #2a323b;
-    --text: #e8edf2; --muted: #8b98a5; --muted-2: #5f6b78; --accent: #4fc3f7; --accent-2: #29b6f6;
+    --text: #e8edf2; --muted: #8b98a5; --muted-2: #5f6b78; --accent: #b388ff; --accent-2: #7c4dff;
     --online: #4caf50; --offline: #616161; --unavailable: #e53935; --grid: #1c2229;
     --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
     --radius: 10px; --radius-lg: 16px;
@@ -20,8 +20,8 @@
   body {
     margin: 0;
     background:
-      radial-gradient(1200px 600px at 15% -10%, rgba(79, 195, 247, 0.06), transparent 60%),
-      radial-gradient(900px 500px at 110% 110%, rgba(79, 195, 247, 0.04), transparent 60%),
+      radial-gradient(1200px 600px at 15% -10%, rgba(179, 136, 255, 0.06), transparent 60%),
+      radial-gradient(900px 500px at 110% 110%, rgba(179, 136, 255, 0.04), transparent 60%),
       var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -82,7 +82,7 @@
     background: linear-gradient(135deg, var(--accent), var(--accent-2));
     color: #05222e;
     font-weight: 700;
-    box-shadow: 0 4px 14px rgba(79, 195, 247, 0.25);
+    box-shadow: 0 4px 14px rgba(179, 136, 255, 0.25);
   }
   .room-item.active small { color: #05222e; }
   .room-item small { opacity: 0.7; font-weight: 500; font-size: 0.72rem; }
@@ -105,7 +105,7 @@
     color: #05222e;
     border-color: transparent;
     font-weight: 700;
-    box-shadow: 0 4px 14px rgba(79, 195, 247, 0.2);
+    box-shadow: 0 4px 14px rgba(179, 136, 255, 0.2);
   }
   button.primary:hover { filter: brightness(1.08); background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
 
@@ -130,7 +130,7 @@
     box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.02);
     transition: box-shadow 0.2s ease;
   }
-  canvas:hover { box-shadow: var(--shadow), 0 0 0 1px rgba(79, 195, 247, 0.15); }
+  canvas:hover { box-shadow: var(--shadow), 0 0 0 1px rgba(179, 136, 255, 0.15); }
 
   #empty-state {
     position: absolute;
@@ -288,7 +288,7 @@
     content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px;
     background: var(--muted); border-radius: 50%; transition: transform 0.18s ease, background-color 0.15s ease;
   }
-  .switch input:checked + .track { background: rgba(79, 195, 247, 0.25); border-color: var(--accent); }
+  .switch input:checked + .track { background: rgba(179, 136, 255, 0.25); border-color: var(--accent); }
   .switch input:checked + .track::before { transform: translateX(16px); background: var(--accent); }
 
   @media (max-width: 900px) {
@@ -447,12 +447,17 @@ function renderEffectsPanel() {
 
   const bass = $('#eq-bass'), mid = $('#eq-mid'), treble = $('#eq-treble');
   const revWet = $('#reverb-wet'), revSize = $('#reverb-size'), comp = $('#compressor-toggle');
-  bass.value = room ? room.eq_bass_db : 0;
-  mid.value = room ? room.eq_mid_db : 0;
-  treble.value = room ? room.eq_treble_db : 0;
-  revWet.value = room ? Math.round(room.reverb_wet * 100) : 0;
-  revSize.value = room ? Math.round(room.reverb_size * 100) : 50;
-  comp.checked = room ? !!room.compressor_enabled : false;
+  // Same reasoning as renderRoomForm's focus guard: don't yank a slider the
+  // user is actively dragging back to the last-saved value just because an
+  // unrelated WS broadcast (HA area sync, another speaker's status) landed
+  // mid-drag.
+  const active = document.activeElement;
+  if (active !== bass) bass.value = room ? room.eq_bass_db : 0;
+  if (active !== mid) mid.value = room ? room.eq_mid_db : 0;
+  if (active !== treble) treble.value = room ? room.eq_treble_db : 0;
+  if (active !== revWet) revWet.value = room ? Math.round(room.reverb_wet * 100) : 0;
+  if (active !== revSize) revSize.value = room ? Math.round(room.reverb_size * 100) : 50;
+  if (active !== comp) comp.checked = room ? !!room.compressor_enabled : false;
   [bass, mid, treble, revWet, revSize, comp].forEach((el) => { el.disabled = !room; });
   updateSliderLabels();
 }
@@ -499,9 +504,20 @@ function renderRoomList() {
 
 function renderRoomForm() {
   const room = currentRoom();
-  $('#room-name').value = room ? room.name : '';
-  $('#room-width').value = room ? room.width_meters : 4;
-  $('#room-height').value = room ? room.height_meters : 4;
+  // HA area sync re-POSTs on effectively any media_player/light state
+  // change anywhere in the house (see ha_bridge_sync.py's _on_state_change),
+  // which can be several times a minute — each one broadcasts a WS event
+  // that used to force these three fields back to their last-saved value
+  // via renderAll(), silently overwriting whatever the user was mid-typing
+  // before they ever got to click Save. This is why "room resize doesn't
+  // work" was reproducible: the width/height fields kept getting reset out
+  // from under the user. Skip refreshing a field the user currently has
+  // focused — it stays exactly as they're editing it until they click away
+  // or hit Save.
+  const nameEl = $('#room-name'), widthEl = $('#room-width'), heightEl = $('#room-height');
+  if (document.activeElement !== nameEl) nameEl.value = room ? room.name : '';
+  if (document.activeElement !== widthEl) widthEl.value = room ? room.width_meters : 4;
+  if (document.activeElement !== heightEl) heightEl.value = room ? room.height_meters : 4;
 }
 
 function renderSpeakerList() {
@@ -563,7 +579,7 @@ function renderCanvas(tMs) {
   if (as.current_room_id === room.id) {
     const lx = as.listener_x * PX_PER_METER, ly = as.listener_y * PX_PER_METER;
 
-    ctx.strokeStyle = 'rgba(79,195,247,0.12)';
+    ctx.strokeStyle = 'rgba(179,136,255,0.12)';
     ctx.lineWidth = 1;
     for (let m = 1; m <= 4; m++) {
       ctx.beginPath();
@@ -573,12 +589,12 @@ function renderCanvas(tMs) {
 
     ctx.beginPath();
     ctx.arc(lx, ly, 10, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(79,195,247,0.25)';
+    ctx.fillStyle = 'rgba(179,136,255,0.25)';
     ctx.fill();
-    ctx.strokeStyle = '#4fc3f7';
+    ctx.strokeStyle = '#b388ff';
     ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.fillStyle = '#4fc3f7';
+    ctx.fillStyle = '#b388ff';
     ctx.font = '10px sans-serif';
     ctx.fillText('listener', lx + 12, ly + 4);
   }
@@ -595,7 +611,7 @@ function renderCanvas(tMs) {
         const radius = 12 + phase * 38;
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(79,195,247,${(1 - phase) * 0.35})`;
+        ctx.strokeStyle = `rgba(179,136,255,${(1 - phase) * 0.35})`;
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -704,7 +720,13 @@ $('#save-room').onclick = async () => {
   // with a missing/stale id, so the backend upsert mints a brand-new room
   // each time instead of updating the one just saved.
   activeRoomId = room.id;
-  renderRoomList();
+  const idx = state.rooms.findIndex((r) => r.id === room.id);
+  if (idx >= 0) state.rooms[idx] = room; else state.rooms.push(room);
+  // Full render, not just the room list — otherwise a width/height resize
+  // only shows up on the canvas once the WS broadcast for this same save
+  // round-trips back, which is an odd delay for an action the user just
+  // took themselves.
+  renderAll();
 };
 
 connectWS();
