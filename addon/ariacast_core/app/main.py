@@ -22,6 +22,7 @@ logger = logging.getLogger("ariacast_core.main")
 try:
     from ariacast_core.database import DatabaseService
     from ariacast_core.dsp import RoomSpatialAudioDSP
+    from ariacast_core.effects import EFFECTS_PRESETS
     from ariacast_core.hue_sync import AlbumArtHueSync
     from ariacast_core.models import Light, Room, Speaker, SpeakerStatus
     from ariacast_core.node_manager import SpeakerNodeManager
@@ -98,7 +99,7 @@ async def _dsp_tick_loop(dsp: RoomSpatialAudioDSP, db: DatabaseService) -> None:
         await asyncio.sleep(DSP_TICK_S)
 
 
-def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialAudioDSP) -> None:
+def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialAudioDSP, socket_server) -> None:
     async def list_rooms(request: web.Request) -> web.Response:
         return web.json_response([r.__dict__ for r in await db.list_rooms()])
 
@@ -117,11 +118,18 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
                 # piling up indefinitely.
                 existing = await db.get_orphan_room_by_name(body["name"])
         room = Room(
-            id=body.get("id") or (existing.id if existing else db.new_id()),
-            name=body["name"],
-            ha_area_id=ha_area_id,
+            id=room_id or (existing.id if existing else db.new_id()),
+            name=body.get("name", existing.name if existing else body["name"]),
+            ha_area_id=body["ha_area_id"] if "ha_area_id" in body else (existing.ha_area_id if existing else None),
             width_meters=float(body.get("width_meters", existing.width_meters if existing else 4.0)),
             height_meters=float(body.get("height_meters", existing.height_meters if existing else 4.0)),
+            eq_bass_db=float(body.get("eq_bass_db", existing.eq_bass_db if existing else 0.0)),
+            eq_mid_db=float(body.get("eq_mid_db", existing.eq_mid_db if existing else 0.0)),
+            eq_treble_db=float(body.get("eq_treble_db", existing.eq_treble_db if existing else 0.0)),
+            reverb_wet=float(body.get("reverb_wet", existing.reverb_wet if existing else 0.0)),
+            reverb_size=float(body.get("reverb_size", existing.reverb_size if existing else 0.5)),
+            compressor_enabled=bool(body.get("compressor_enabled", existing.compressor_enabled if existing else False)),
+            effects_preset=body.get("effects_preset", existing.effects_preset if existing else "flat"),
         )
         await db.upsert_room(room)
         return web.json_response(room.__dict__)
@@ -141,6 +149,7 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
         speaker = await db.get_speaker(speaker_id)
         if not speaker:
             return web.json_response({"error": "not found"}, status=404)
+        old_room_id = speaker.room_id
         speaker.pos_x = float(body.get("pos_x", speaker.pos_x))
         speaker.pos_y = float(body.get("pos_y", speaker.pos_y))
         speaker.orientation_deg = float(body.get("orientation_deg", speaker.orientation_deg))
@@ -149,6 +158,12 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
         await db.upsert_speaker(speaker)
         if speaker.room_id:
             await dsp.recompute_room(speaker.room_id)
+        if old_room_id and old_room_id != speaker.room_id:
+            # The speaker-picker checklist can move a speaker straight out of
+            # whatever room it was in — rebalance that room's remaining
+            # speakers immediately instead of leaving them on stale gain/delay
+            # values until the next periodic DSP tick (up to DSP_TICK_S away).
+            await dsp.recompute_room(old_room_id)
         return web.json_response({**speaker.__dict__, "status": speaker.status.value})
 
     async def list_lights(request: web.Request) -> web.Response:
@@ -200,6 +215,7 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
                 gain_db=existing.gain_db if existing else 0.0,
                 delay_ms=existing.delay_ms if existing else 0.0,
                 extra_delay_ms=existing.extra_delay_ms if existing else 0.0,
+                air_cutoff_hz=existing.air_cutoff_hz if existing else 20000.0,
                 volume=existing.volume if existing else 50,
             )
             await db.upsert_speaker(speaker)
@@ -222,6 +238,9 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
             await dsp.recompute_room(speaker.room_id)
             speaker = await db.get_speaker(speaker_id)
         return web.json_response({**speaker.__dict__, "status": speaker.status.value})
+
+    async def list_effects_presets(request: web.Request) -> web.Response:
+        return web.json_response(EFFECTS_PRESETS)
 
     app.router.add_get("/api/rooms", list_rooms)
     app.router.add_post("/api/rooms", upsert_room)
@@ -282,7 +301,7 @@ def create_app() -> web.Application:
 
     pubsub.attach_routes(app, path="/ws")
     socket_server.attach_routes(app)
-    _build_rest_api(app, db, dsp)
+    _build_rest_api(app, db, dsp, socket_server)
     app.router.add_static("/", WWW_DIR, show_index=True)
 
     _seen_artwork: dict[str, str] = {}

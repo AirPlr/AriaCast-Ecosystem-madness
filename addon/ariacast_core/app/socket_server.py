@@ -46,6 +46,7 @@ from aiohttp import web, WSMsgType
 
 from ariacast_core.database import DatabaseService
 from ariacast_core.ducking import AudioDuckingMixer
+from ariacast_core.effects import CompressorSettings, EQSettings, OnePoleLowpass, ReverbSettings, RoomEffectsChain
 from ariacast_core.models import SpeakerStatus
 from ariacast_core.node_manager import SpeakerNodeManager
 
@@ -61,6 +62,14 @@ CHANNELS = 2
 JITTER_TARGET_FRAMES = 5  # 100ms nominal cushion per output
 JITTER_MAX_STRETCH = 0.05  # +/-5%, matches the spec's WSOLA tolerance
 JITTER_MIN_STRETCH = 0.02
+
+# One-pole smoothing coefficient applied to the per-frame gain multiplier
+# (not the stored DB value — this only smooths what's actually applied to
+# PCM). Without it, a DSP recompute (listener movement, tick) changes
+# gain_db instantly between one 20ms frame and the next, which is audible
+# as a click/zipper. 0.20 settles to within ~2% of the new target in about
+# 80ms — fast enough to feel responsive, slow enough to be inaudible.
+GAIN_SMOOTHING_COEFF = 0.20
 
 
 def tune_low_latency_socket(sock: socket.socket) -> None:
@@ -107,6 +116,8 @@ class OutputBuffer:
     frames_read: int = 0
     last_recv_monotonic_ns: int = 0
     ducking: AudioDuckingMixer = field(default_factory=lambda: AudioDuckingMixer(SAMPLE_RATE, CHANNELS))
+    smoothed_gain_linear: float = 1.0
+    air_lowpass: OnePoleLowpass = field(default_factory=OnePoleLowpass)
 
     def push(self, frame: bytes) -> None:
         self.last_recv_monotonic_ns = time.monotonic_ns()
@@ -211,6 +222,7 @@ class AriaCastSocketServer:
         self._inbound_frames = 0
         self._room_streams: dict[str, RoomAudioStream] = {}
         self._ha_speakers_started: set[str] = set()  # room_ids with HA media_players already triggered
+        self._room_effects: dict[str, RoomEffectsChain] = {}
 
     def attach_routes(self, app: web.Application) -> None:
         app.router.add_get("/audio", self._handle_inbound_audio)
@@ -245,13 +257,14 @@ class AriaCastSocketServer:
         await self._ensure_outputs_for_room(room_id)
         if room_id:
             await self._ensure_ha_speakers_for_room(room_id)
+            await self._load_room_effects(room_id)
         logger.info("Inbound audio session started for room=%s from %s", room_id, request.remote)
 
         try:
             async for msg in ws:
                 if msg.type == WSMsgType.BINARY:
                     self._inbound_frames += 1
-                    self._fan_out(msg.data)
+                    await self._fan_out(msg.data)
                 elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSED):
                     break
         finally:
@@ -260,7 +273,35 @@ class AriaCastSocketServer:
             logger.info("Inbound audio session ended for room=%s", room_id)
         return ws
 
-    def _fan_out(self, frame: bytes) -> None:
+    async def _load_room_effects(self, room_id: str) -> RoomEffectsChain:
+        """(Re)build a room's effects chain from its current DB settings.
+        Called once when a room's stream starts; `update_room_effects` below
+        keeps it live-updated afterwards without needing a restart."""
+        room = await self.db.get_room(room_id)
+        chain = self._room_effects.setdefault(room_id, RoomEffectsChain())
+        if room:
+            self._apply_room_to_chain(chain, room)
+        return chain
+
+    @staticmethod
+    def _apply_room_to_chain(chain: RoomEffectsChain, room) -> None:
+        chain.set_eq(EQSettings(bass_db=room.eq_bass_db, mid_db=room.eq_mid_db, treble_db=room.eq_treble_db))
+        chain.set_reverb(ReverbSettings(wet=room.reverb_wet, size=room.reverb_size))
+        chain.set_compressor(CompressorSettings(enabled=room.compressor_enabled))
+
+    async def update_room_effects(self, room) -> None:
+        """Push a settings change into an already-running room's live effects
+        chain, if it has one — called by the REST handler right after
+        persisting, so a slider change in the Web UI is audible immediately
+        instead of waiting for the next stream restart."""
+        chain = self._room_effects.get(room.id)
+        if chain is not None:
+            self._apply_room_to_chain(chain, room)
+
+    async def _fan_out(self, frame: bytes) -> None:
+        chain = self._room_effects.get(self._active_room_id) if self._active_room_id else None
+        if chain is not None and not chain.is_fully_bypassed:
+            frame = await asyncio.to_thread(chain.process, frame)
         for output in self._outputs.values():
             output.push(frame)
         stream = self._room_streams.get(self._active_room_id)
@@ -377,8 +418,14 @@ class AriaCastSocketServer:
                     if ratio != 1.0:
                         samples = _stretch(samples, ratio)
 
-                    gain_linear = 10 ** (speaker.gain_db / 20.0)
-                    scaled = np.clip(samples.astype(np.float32) * gain_linear, -32768, 32767).astype("<i2")
+                    target_gain_linear = 10 ** (speaker.gain_db / 20.0)
+                    output.smoothed_gain_linear += (target_gain_linear - output.smoothed_gain_linear) * GAIN_SMOOTHING_COEFF
+                    scaled = np.clip(
+                        samples.astype(np.float32) * output.smoothed_gain_linear, -32768, 32767
+                    ).astype("<i2")
+
+                    output.air_lowpass.set_cutoff(speaker.air_cutoff_hz)
+                    scaled = output.air_lowpass.process(scaled)
 
                     mixed = output.ducking.mix_frame(scaled.tobytes())
                     await client.send_audio_frame(mixed)

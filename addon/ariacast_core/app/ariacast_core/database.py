@@ -32,7 +32,14 @@ CREATE TABLE IF NOT EXISTS rooms (
     width_meters REAL NOT NULL DEFAULT 4.0,
     height_meters REAL NOT NULL DEFAULT 4.0,
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    eq_bass_db REAL NOT NULL DEFAULT 0,
+    eq_mid_db REAL NOT NULL DEFAULT 0,
+    eq_treble_db REAL NOT NULL DEFAULT 0,
+    reverb_wet REAL NOT NULL DEFAULT 0,
+    reverb_size REAL NOT NULL DEFAULT 0.5,
+    compressor_enabled INTEGER NOT NULL DEFAULT 0,
+    effects_preset TEXT NOT NULL DEFAULT 'flat'
 );
 
 CREATE TABLE IF NOT EXISTS speakers (
@@ -50,6 +57,7 @@ CREATE TABLE IF NOT EXISTS speakers (
     gain_db REAL NOT NULL DEFAULT 0,
     delay_ms REAL NOT NULL DEFAULT 0,
     extra_delay_ms REAL NOT NULL DEFAULT 0,
+    air_cutoff_hz REAL NOT NULL DEFAULT 20000,
     volume INTEGER NOT NULL DEFAULT 50,
     is_playing INTEGER NOT NULL DEFAULT 0,
     platform TEXT NOT NULL DEFAULT '',
@@ -103,9 +111,26 @@ class DatabaseService:
         patch those in-place here, one ALTER TABLE per historical column."""
         assert self._db is not None
         cur = await self._db.execute("PRAGMA table_info(speakers)")
-        existing_cols = {row[1] for row in await cur.fetchall()}
-        if "extra_delay_ms" not in existing_cols:
+        speaker_cols = {row[1] for row in await cur.fetchall()}
+        if "extra_delay_ms" not in speaker_cols:
             await self._db.execute("ALTER TABLE speakers ADD COLUMN extra_delay_ms REAL NOT NULL DEFAULT 0")
+        if "air_cutoff_hz" not in speaker_cols:
+            await self._db.execute("ALTER TABLE speakers ADD COLUMN air_cutoff_hz REAL NOT NULL DEFAULT 20000")
+
+        cur = await self._db.execute("PRAGMA table_info(rooms)")
+        room_cols = {row[1] for row in await cur.fetchall()}
+        for col, ddl in (
+            ("eq_bass_db", "ALTER TABLE rooms ADD COLUMN eq_bass_db REAL NOT NULL DEFAULT 0"),
+            ("eq_mid_db", "ALTER TABLE rooms ADD COLUMN eq_mid_db REAL NOT NULL DEFAULT 0"),
+            ("eq_treble_db", "ALTER TABLE rooms ADD COLUMN eq_treble_db REAL NOT NULL DEFAULT 0"),
+            ("reverb_wet", "ALTER TABLE rooms ADD COLUMN reverb_wet REAL NOT NULL DEFAULT 0"),
+            ("reverb_size", "ALTER TABLE rooms ADD COLUMN reverb_size REAL NOT NULL DEFAULT 0.5"),
+            ("compressor_enabled", "ALTER TABLE rooms ADD COLUMN compressor_enabled INTEGER NOT NULL DEFAULT 0"),
+            ("effects_preset", "ALTER TABLE rooms ADD COLUMN effects_preset TEXT NOT NULL DEFAULT 'flat'"),
+        ):
+            if col not in room_cols:
+                await self._db.execute(ddl)
+
         await self._db.commit()
         logger.info("DatabaseService ready at %s", self.db_path)
 
@@ -137,13 +162,22 @@ class DatabaseService:
             room.created_at = existing.created_at if existing else now
             room.updated_at = now
             await self._db.execute(
-                """INSERT INTO rooms (id, ha_area_id, name, width_meters, height_meters, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?)
+                """INSERT INTO rooms (id, ha_area_id, name, width_meters, height_meters, created_at, updated_at,
+                                       eq_bass_db, eq_mid_db, eq_treble_db, reverb_wet, reverb_size,
+                                       compressor_enabled, effects_preset)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(id) DO UPDATE SET
                      ha_area_id=excluded.ha_area_id, name=excluded.name,
                      width_meters=excluded.width_meters, height_meters=excluded.height_meters,
-                     updated_at=excluded.updated_at""",
-                (room.id, room.ha_area_id, room.name, room.width_meters, room.height_meters, room.created_at, room.updated_at),
+                     updated_at=excluded.updated_at,
+                     eq_bass_db=excluded.eq_bass_db, eq_mid_db=excluded.eq_mid_db, eq_treble_db=excluded.eq_treble_db,
+                     reverb_wet=excluded.reverb_wet, reverb_size=excluded.reverb_size,
+                     compressor_enabled=excluded.compressor_enabled, effects_preset=excluded.effects_preset""",
+                (
+                    room.id, room.ha_area_id, room.name, room.width_meters, room.height_meters,
+                    room.created_at, room.updated_at, room.eq_bass_db, room.eq_mid_db, room.eq_treble_db,
+                    room.reverb_wet, room.reverb_size, int(room.compressor_enabled), room.effects_preset,
+                ),
             )
             await self._db.commit()
         await self._emit("rooms", "upsert", room.__dict__)
@@ -153,13 +187,13 @@ class DatabaseService:
         assert self._db is not None
         cur = await self._db.execute("SELECT * FROM rooms WHERE id = ?", (room_id,))
         row = await cur.fetchone()
-        return Room(**dict(row)) if row else None
+        return self._row_to_room(row) if row else None
 
     async def get_room_by_ha_area_id(self, ha_area_id: str) -> Optional[Room]:
         assert self._db is not None
         cur = await self._db.execute("SELECT * FROM rooms WHERE ha_area_id = ?", (ha_area_id,))
         row = await cur.fetchone()
-        return Room(**dict(row)) if row else None
+        return self._row_to_room(row) if row else None
 
     async def get_orphan_room_by_name(self, name: str) -> Optional[Room]:
         """A room with no `ha_area_id` that happens to share an HA area's
@@ -179,13 +213,40 @@ class DatabaseService:
         assert self._db is not None
         cur = await self._db.execute("SELECT * FROM rooms ORDER BY name")
         rows = await cur.fetchall()
-        return [Room(**dict(r)) for r in rows]
+        return [self._row_to_room(r) for r in rows]
+
+    @staticmethod
+    def _row_to_room(row: aiosqlite.Row) -> Room:
+        d = dict(row)
+        d["compressor_enabled"] = bool(d["compressor_enabled"])
+        return Room(**d)
 
     async def delete_room(self, room_id: str) -> None:
         assert self._db is not None
         await self._db.execute("DELETE FROM rooms WHERE id = ?", (room_id,))
         await self._db.commit()
         await self._emit("rooms", "delete", {"id": room_id})
+
+    async def update_room_effects(self, room: Room) -> Optional[Room]:
+        """Persist just the effects-chain fields of `room` (id + those
+        fields matter, everything else on the passed object is ignored) —
+        used by the effects REST endpoint so a slider tweak can't race a
+        concurrent name/size edit."""
+        assert self._db is not None
+        await self._db.execute(
+            """UPDATE rooms SET eq_bass_db = ?, eq_mid_db = ?, eq_treble_db = ?,
+                                 reverb_wet = ?, reverb_size = ?, compressor_enabled = ?, effects_preset = ?
+               WHERE id = ?""",
+            (
+                room.eq_bass_db, room.eq_mid_db, room.eq_treble_db, room.reverb_wet,
+                room.reverb_size, int(room.compressor_enabled), room.effects_preset, room.id,
+            ),
+        )
+        await self._db.commit()
+        updated = await self.get_room(room.id)
+        if updated:
+            await self._emit("rooms", "effects", updated.__dict__)
+        return updated
 
     # -- speakers ---------------------------------------------------------
 
@@ -195,22 +256,23 @@ class DatabaseService:
             await self._db.execute(
                 """INSERT INTO speakers (id, room_id, ha_entity_id, hardware_uuid, ip_address, port, name,
                                           status, pos_x, pos_y, orientation_deg, gain_db, delay_ms, extra_delay_ms,
-                                          volume, is_playing, platform, last_seen)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                          air_cutoff_hz, volume, is_playing, platform, last_seen)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(id) DO UPDATE SET
                      room_id=excluded.room_id, ha_entity_id=excluded.ha_entity_id,
                      ip_address=excluded.ip_address, port=excluded.port, name=excluded.name,
                      status=excluded.status, pos_x=excluded.pos_x, pos_y=excluded.pos_y,
                      orientation_deg=excluded.orientation_deg, gain_db=excluded.gain_db,
                      delay_ms=excluded.delay_ms, extra_delay_ms=excluded.extra_delay_ms,
+                     air_cutoff_hz=excluded.air_cutoff_hz,
                      volume=excluded.volume, is_playing=excluded.is_playing,
                      platform=excluded.platform, last_seen=excluded.last_seen""",
                 (
                     speaker.id, speaker.room_id, speaker.ha_entity_id, speaker.hardware_uuid,
                     speaker.ip_address, speaker.port, speaker.name, speaker.status.value,
                     speaker.pos_x, speaker.pos_y, speaker.orientation_deg, speaker.gain_db,
-                    speaker.delay_ms, speaker.extra_delay_ms, speaker.volume, int(speaker.is_playing),
-                    speaker.platform, speaker.last_seen,
+                    speaker.delay_ms, speaker.extra_delay_ms, speaker.air_cutoff_hz, speaker.volume,
+                    int(speaker.is_playing), speaker.platform, speaker.last_seen,
                 ),
             )
             await self._db.commit()
@@ -249,11 +311,13 @@ class DatabaseService:
         if speaker:
             await self._emit("speakers", "status", self._speaker_to_dict(speaker))
 
-    async def update_speaker_dsp(self, speaker_id: str, gain_db: float, delay_ms: float) -> None:
+    async def update_speaker_dsp(
+        self, speaker_id: str, gain_db: float, delay_ms: float, air_cutoff_hz: float = 20000.0
+    ) -> None:
         assert self._db is not None
         await self._db.execute(
-            "UPDATE speakers SET gain_db = ?, delay_ms = ? WHERE id = ?",
-            (gain_db, delay_ms, speaker_id),
+            "UPDATE speakers SET gain_db = ?, delay_ms = ?, air_cutoff_hz = ? WHERE id = ?",
+            (gain_db, delay_ms, air_cutoff_hz, speaker_id),
         )
         await self._db.commit()
         speaker = await self.get_speaker(speaker_id)
