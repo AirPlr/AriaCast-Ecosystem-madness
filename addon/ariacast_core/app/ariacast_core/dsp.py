@@ -43,6 +43,17 @@ GAIN_FLOOR_DB = -24.0
 GAIN_CEIL_DB = 0.0
 VBAP_POWER = 2.0  # inverse-square falloff exponent
 
+# Air-absorption realism cue: a speaker no farther than the nearest one gets
+# the full 20kHz (effectively unfiltered) top end; every extra meter of
+# distance beyond that gently rolls off the highs, the way a source really
+# does sound duller from farther away. This is a stylized cue, not a
+# physically exact air-absorption model (real air absorption over a few
+# indoor meters is close to imperceptible) — tuned to be a subtle depth
+# hint rather than an obvious filter.
+AIR_CUTOFF_MAX_HZ = 20000.0
+AIR_CUTOFF_FLOOR_HZ = 6000.0
+AIR_CUTOFF_DECAY_PER_M = 0.18
+
 
 @dataclass
 class SpeakerDspResult:
@@ -50,6 +61,7 @@ class SpeakerDspResult:
     gain_db: float
     delay_ms: float
     distance_m: float
+    air_cutoff_hz: float
 
 
 class RoomSpatialAudioDSP:
@@ -80,7 +92,15 @@ class RoomSpatialAudioDSP:
             gain_db = 20.0 * math.log10(max(w, 1e-6))
             gain_db = max(GAIN_FLOOR_DB, min(GAIN_CEIL_DB, gain_db))
             delay_ms = (distances[s.id] - d_min) / SPEED_OF_SOUND_M_S * 1000.0
-            results.append(SpeakerDspResult(speaker_id=s.id, gain_db=gain_db, delay_ms=delay_ms, distance_m=distances[s.id]))
+            extra_m = distances[s.id] - d_min
+            air_cutoff_hz = max(
+                AIR_CUTOFF_FLOOR_HZ,
+                AIR_CUTOFF_MAX_HZ * math.exp(-AIR_CUTOFF_DECAY_PER_M * extra_m),
+            )
+            results.append(SpeakerDspResult(
+                speaker_id=s.id, gain_db=gain_db, delay_ms=delay_ms,
+                distance_m=distances[s.id], air_cutoff_hz=air_cutoff_hz,
+            ))
         return results
 
     async def recompute_room(self, room_id: str) -> list[SpeakerDspResult]:
@@ -104,14 +124,14 @@ class RoomSpatialAudioDSP:
             # two ESPHome speakers with very different inherent delay) can be
             # compensated for — see Speaker.extra_delay_ms.
             extra = speakers_by_id[r.speaker_id].extra_delay_ms
-            await self.db.update_speaker_dsp(r.speaker_id, r.gain_db, r.delay_ms + extra)
+            await self.db.update_speaker_dsp(r.speaker_id, r.gain_db, r.delay_ms + extra, r.air_cutoff_hz)
 
-        # Any offline speaker in the room is parked at unity/no-delay so it
-        # snaps to a sane baseline the moment it reconnects, before the next
-        # recompute tick lands.
+        # Any offline speaker in the room is parked at unity/no-delay/no-filter
+        # so it snaps to a sane baseline the moment it reconnects, before the
+        # next recompute tick lands.
         offline_ids = {s.id for s in speakers if s.status != SpeakerStatus.ONLINE}
         for sid in offline_ids:
-            await self.db.update_speaker_dsp(sid, 0.0, 0.0)
+            await self.db.update_speaker_dsp(sid, 0.0, 0.0, AIR_CUTOFF_MAX_HZ)
 
         logger.debug("DSP recompute room=%s listener=(%.2f,%.2f) -> %d online speakers", room_id, listener_x, listener_y, len(results))
         return results

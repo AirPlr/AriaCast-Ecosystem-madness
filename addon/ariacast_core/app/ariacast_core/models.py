@@ -21,6 +21,16 @@ class Room:
     height_meters: float = 4.0
     created_at: float = 0.0
     updated_at: float = 0.0
+    # Room-level effects chain (see core/effects.py RoomEffectsChain) — all
+    # default to flat/off so an existing room's sound doesn't change until
+    # someone explicitly touches a slider or preset.
+    eq_bass_db: float = 0.0
+    eq_mid_db: float = 0.0
+    eq_treble_db: float = 0.0
+    reverb_wet: float = 0.0
+    reverb_size: float = 0.5
+    compressor_enabled: bool = False
+    effects_preset: str = "flat"
 
 
 @dataclass
@@ -39,6 +49,7 @@ class Speaker:
     gain_db: float = 0.0
     delay_ms: float = 0.0  # total delay actually applied; overwritten every DSP tick (geometric + extra_delay_ms)
     extra_delay_ms: float = 0.0  # manual/calibration offset layered on top of the geometric delay; survives DSP ticks
+    air_cutoff_hz: float = 20000.0  # DSP-computed air-absorption lowpass cutoff; ~inaudible at 20000 (bypassed)
     volume: int = 50
     is_playing: bool = False
     platform: str = ""

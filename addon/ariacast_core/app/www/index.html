@@ -235,6 +235,62 @@
 
   hr.divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
 
+  .preset-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .preset-btn { flex: 1 1 auto; padding: 7px 10px; font-size: 0.76rem; }
+  .preset-btn.active {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #05222e; border-color: transparent; font-weight: 700;
+  }
+
+  .slider-field { margin-bottom: 14px; }
+  .slider-field .slider-label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 0.72rem; font-weight: 600; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.02em;
+  }
+  .slider-field .slider-value { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--panel-3);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    border: 2px solid #05222e;
+    transition: transform 0.1s ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+  input[type="range"]::-moz-range-thumb {
+    width: 13px; height: 13px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border: 2px solid #05222e; cursor: pointer;
+  }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .toggle-row span { font-size: 0.82rem; font-weight: 500; }
+  .switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .track {
+    position: absolute; inset: 0; background: var(--panel-3); border: 1px solid var(--border);
+    border-radius: 999px; cursor: pointer; transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+  .switch .track::before {
+    content: ""; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px;
+    background: var(--muted); border-radius: 50%; transition: transform 0.18s ease, background-color 0.15s ease;
+  }
+  .switch input:checked + .track { background: rgba(79, 195, 247, 0.25); border-color: var(--accent); }
+  .switch input:checked + .track::before { transform: translateX(16px); background: var(--accent); }
+
   @media (max-width: 900px) {
     #layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; height: auto; min-height: 100vh; }
     #canvas-wrap { padding: 16px; }
@@ -276,6 +332,36 @@
     <hr class="divider" />
     <h2>Listener</h2>
     <p class="speaker-meta">Drag the cyan marker on the canvas, or click anywhere in the room, to set the tracked listener position and trigger a spatial DSP recompute.</p>
+
+    <hr class="divider" />
+    <h2>Room Effects</h2>
+    <div id="preset-row" class="preset-row"></div>
+
+    <div class="slider-field">
+      <div class="slider-label"><span>Bass</span><span class="slider-value" id="eq-bass-value">0.0 dB</span></div>
+      <input type="range" id="eq-bass" min="-12" max="12" step="0.5" value="0" />
+    </div>
+    <div class="slider-field">
+      <div class="slider-label"><span>Mid</span><span class="slider-value" id="eq-mid-value">0.0 dB</span></div>
+      <input type="range" id="eq-mid" min="-12" max="12" step="0.5" value="0" />
+    </div>
+    <div class="slider-field">
+      <div class="slider-label"><span>Treble</span><span class="slider-value" id="eq-treble-value">0.0 dB</span></div>
+      <input type="range" id="eq-treble" min="-12" max="12" step="0.5" value="0" />
+    </div>
+    <div class="slider-field">
+      <div class="slider-label"><span>Reverb</span><span class="slider-value" id="reverb-wet-value">0%</span></div>
+      <input type="range" id="reverb-wet" min="0" max="100" step="1" value="0" />
+    </div>
+    <div class="slider-field">
+      <div class="slider-label"><span>Reverb size</span><span class="slider-value" id="reverb-size-value">50%</span></div>
+      <input type="range" id="reverb-size" min="0" max="100" step="1" value="50" />
+    </div>
+    <div class="toggle-row">
+      <span>Compressor / limiter</span>
+      <label class="switch"><input type="checkbox" id="compressor-toggle" /><span class="track"></span></label>
+    </div>
+    <p class="speaker-meta">Applied once per room before per-speaker spatial gain/delay — everyone in the room hears the same tone shaping, panning stays per-speaker.</p>
   </div>
 </div>
 
@@ -288,6 +374,7 @@ let dragging = null; // {type: 'speaker'|'listener', id}
 const $ = (sel) => document.querySelector(sel);
 const canvas = $('#canvas');
 const ctx = canvas.getContext('2d');
+let presets = {};
 
 function apiUrl(path) { return path; } // ingress-relative
 
@@ -341,8 +428,61 @@ function renderAll() {
   renderRoomList();
   renderRoomForm();
   renderSpeakerList();
+  renderEffectsPanel();
   renderCanvas();
 }
+
+function renderEffectsPanel() {
+  const room = currentRoom();
+  const presetRow = $('#preset-row');
+  presetRow.innerHTML = '';
+  Object.keys(presets).forEach((name) => {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn' + (room && room.effects_preset === name ? ' active' : '');
+    btn.textContent = name[0].toUpperCase() + name.slice(1);
+    btn.disabled = !room;
+    btn.onclick = () => room && api('POST', `/api/rooms/${room.id}/effects`, { preset: name });
+    presetRow.appendChild(btn);
+  });
+
+  const bass = $('#eq-bass'), mid = $('#eq-mid'), treble = $('#eq-treble');
+  const revWet = $('#reverb-wet'), revSize = $('#reverb-size'), comp = $('#compressor-toggle');
+  bass.value = room ? room.eq_bass_db : 0;
+  mid.value = room ? room.eq_mid_db : 0;
+  treble.value = room ? room.eq_treble_db : 0;
+  revWet.value = room ? Math.round(room.reverb_wet * 100) : 0;
+  revSize.value = room ? Math.round(room.reverb_size * 100) : 50;
+  comp.checked = room ? !!room.compressor_enabled : false;
+  [bass, mid, treble, revWet, revSize, comp].forEach((el) => { el.disabled = !room; });
+  updateSliderLabels();
+}
+
+function updateSliderLabels() {
+  $('#eq-bass-value').textContent = `${parseFloat($('#eq-bass').value).toFixed(1)} dB`;
+  $('#eq-mid-value').textContent = `${parseFloat($('#eq-mid').value).toFixed(1)} dB`;
+  $('#eq-treble-value').textContent = `${parseFloat($('#eq-treble').value).toFixed(1)} dB`;
+  $('#reverb-wet-value').textContent = `${$('#reverb-wet').value}%`;
+  $('#reverb-size-value').textContent = `${$('#reverb-size').value}%`;
+}
+
+function pushEffects() {
+  if (!activeRoomId) return;
+  api('POST', `/api/rooms/${activeRoomId}/effects`, {
+    eq_bass_db: parseFloat($('#eq-bass').value),
+    eq_mid_db: parseFloat($('#eq-mid').value),
+    eq_treble_db: parseFloat($('#eq-treble').value),
+    reverb_wet: parseFloat($('#reverb-wet').value) / 100,
+    reverb_size: parseFloat($('#reverb-size').value) / 100,
+    compressor_enabled: $('#compressor-toggle').checked,
+  });
+}
+
+['eq-bass', 'eq-mid', 'eq-treble', 'reverb-wet', 'reverb-size'].forEach((id) => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', updateSliderLabels);
+  el.addEventListener('change', pushEffects);
+});
+$('#compressor-toggle').addEventListener('change', pushEffects);
 
 function renderRoomList() {
   const el = $('#room-list');
@@ -398,7 +538,7 @@ function statusColor(status) {
   return status === 'online' ? '#4caf50' : status === 'unavailable' ? '#e53935' : '#616161';
 }
 
-function renderCanvas() {
+function renderCanvas(tMs) {
   const room = currentRoom();
   const empty = $('#empty-state');
   if (!room) {
@@ -411,16 +551,26 @@ function renderCanvas() {
   empty.classList.remove('visible');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   roomToCanvasScale(room);
+  const t = tMs || performance.now();
 
   // room border
   ctx.strokeStyle = '#3a4552';
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
 
-  // listener position
+  // listener position + distance rings, visualizing the DSP's falloff geometry
   const as = state.app_state || {};
   if (as.current_room_id === room.id) {
     const lx = as.listener_x * PX_PER_METER, ly = as.listener_y * PX_PER_METER;
+
+    ctx.strokeStyle = 'rgba(79,195,247,0.12)';
+    ctx.lineWidth = 1;
+    for (let m = 1; m <= 4; m++) {
+      ctx.beginPath();
+      ctx.arc(lx, ly, m * PX_PER_METER, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     ctx.beginPath();
     ctx.arc(lx, ly, 10, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(79,195,247,0.25)';
@@ -433,18 +583,39 @@ function renderCanvas() {
     ctx.fillText('listener', lx + 12, ly + 4);
   }
 
-  // speakers
+  // speakers: gain-driven glow + an expanding "now playing" ripple
   state.speakers.filter((s) => s.room_id === room.id).forEach((s) => {
     const x = s.pos_x * PX_PER_METER, y = s.pos_y * PX_PER_METER;
+    const color = statusColor(s.status);
+
+    if (s.status === 'online' && s.is_playing) {
+      const cycleMs = 1800;
+      for (let ring = 0; ring < 2; ring++) {
+        const phase = ((t + ring * (cycleMs / 2)) % cycleMs) / cycleMs;
+        const radius = 12 + phase * 38;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(79,195,247,${(1 - phase) * 0.35})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate((s.orientation_deg * Math.PI) / 180);
+    // gain_db is normally in [GAIN_FLOOR_DB, 0] (see dsp.py) -> map to a
+    // 0..1 glow strength so the loudest speaker for the current listener
+    // position visibly stands out.
+    const glowStrength = Math.max(0, Math.min(1, (Number(s.gain_db) + 24) / 24));
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 4 + glowStrength * 14;
     ctx.beginPath();
     ctx.moveTo(0, -12);
     ctx.lineTo(9, 9);
     ctx.lineTo(-9, 9);
     ctx.closePath();
-    ctx.fillStyle = statusColor(s.status);
+    ctx.fillStyle = color;
     ctx.fill();
     ctx.restore();
     ctx.fillStyle = '#cfd8e3';
@@ -452,6 +623,15 @@ function renderCanvas() {
     ctx.fillText(s.name, x + 14, y + 4);
   });
 }
+
+function animationLoop(t) {
+  const room = currentRoom();
+  if (room && state.speakers.some((s) => s.room_id === room.id && s.status === 'online' && s.is_playing)) {
+    renderCanvas(t);
+  }
+  requestAnimationFrame(animationLoop);
+}
+requestAnimationFrame(animationLoop);
 
 function canvasToMeters(evt) {
   const rect = canvas.getBoundingClientRect();
@@ -502,7 +682,13 @@ window.addEventListener('mouseup', () => {
 
 $('#new-room').onclick = async () => {
   const room = await api('POST', '/api/rooms', { name: 'New Room', width_meters: 4, height_meters: 4 });
+  // The WS broadcast for this same creation can arrive before this POST's
+  // own response does (two separate round trips racing on localhost), so
+  // it renders with the still-stale activeRoomId and this needs its own
+  // render afterwards — same fix as the Save Room button below.
+  if (!state.rooms.some((r) => r.id === room.id)) state.rooms.push(room);
   activeRoomId = room.id;
+  renderAll();
 };
 
 $('#save-room').onclick = async () => {
@@ -522,6 +708,7 @@ $('#save-room').onclick = async () => {
 };
 
 connectWS();
+api('GET', '/api/effects/presets').then((data) => { presets = data; renderEffectsPanel(); });
 </script>
 </body>
 </html>

@@ -22,6 +22,7 @@ logger = logging.getLogger("ariacast_core.main")
 try:
     from ariacast_core.database import DatabaseService
     from ariacast_core.dsp import RoomSpatialAudioDSP
+    from ariacast_core.effects import EFFECTS_PRESETS
     from ariacast_core.hue_sync import AlbumArtHueSync
     from ariacast_core.models import Light, Room, Speaker, SpeakerStatus
     from ariacast_core.node_manager import SpeakerNodeManager
@@ -98,23 +99,76 @@ async def _dsp_tick_loop(dsp: RoomSpatialAudioDSP, db: DatabaseService) -> None:
         await asyncio.sleep(DSP_TICK_S)
 
 
-def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialAudioDSP) -> None:
+def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialAudioDSP, socket_server) -> None:
     async def list_rooms(request: web.Request) -> web.Response:
         return web.json_response([r.__dict__ for r in await db.list_rooms()])
 
     async def upsert_room(request: web.Request) -> web.Response:
         body = await request.json()
-        ha_area_id = body.get("ha_area_id")
-        existing = await db.get_room_by_ha_area_id(ha_area_id) if (ha_area_id and not body.get("id")) else None
+        room_id = body.get("id")
+        # Look the existing row up by id when given (the Web UI Save button
+        # always sends one for a room it already knows about), else by
+        # ha_area_id (the HA area sync's only key, since it never knows a
+        # room's id). Either way, anything the caller didn't explicitly
+        # include falls back to what's already stored — a caller that only
+        # cares about one slice of a room (name/size here, the effects
+        # chain in set_room_effects below) must not silently blank out the
+        # rest. This previously wasn't true for ha_area_id itself: the Web
+        # UI's Save button never sends it, so editing an HA-linked room's
+        # name/size used to null out its ha_area_id — silently orphaning it
+        # and leaving the next HA sync to mint a duplicate for that area.
+        existing = await db.get_room(room_id) if room_id else None
+        if existing is None and body.get("ha_area_id"):
+            existing = await db.get_room_by_ha_area_id(body["ha_area_id"])
         room = Room(
-            id=body.get("id") or (existing.id if existing else db.new_id()),
-            name=body["name"],
-            ha_area_id=ha_area_id,
+            id=room_id or (existing.id if existing else db.new_id()),
+            name=body.get("name", existing.name if existing else body["name"]),
+            ha_area_id=body["ha_area_id"] if "ha_area_id" in body else (existing.ha_area_id if existing else None),
             width_meters=float(body.get("width_meters", existing.width_meters if existing else 4.0)),
             height_meters=float(body.get("height_meters", existing.height_meters if existing else 4.0)),
+            eq_bass_db=float(body.get("eq_bass_db", existing.eq_bass_db if existing else 0.0)),
+            eq_mid_db=float(body.get("eq_mid_db", existing.eq_mid_db if existing else 0.0)),
+            eq_treble_db=float(body.get("eq_treble_db", existing.eq_treble_db if existing else 0.0)),
+            reverb_wet=float(body.get("reverb_wet", existing.reverb_wet if existing else 0.0)),
+            reverb_size=float(body.get("reverb_size", existing.reverb_size if existing else 0.5)),
+            compressor_enabled=bool(body.get("compressor_enabled", existing.compressor_enabled if existing else False)),
+            effects_preset=body.get("effects_preset", existing.effects_preset if existing else "flat"),
         )
         await db.upsert_room(room)
         return web.json_response(room.__dict__)
+
+    async def set_room_effects(request: web.Request) -> web.Response:
+        room_id = request.match_info["room_id"]
+        body = await request.json()
+        existing = await db.get_room(room_id)
+        if not existing:
+            return web.json_response({"error": "not found"}, status=404)
+
+        preset_name = body.get("preset")
+        preset = EFFECTS_PRESETS.get(preset_name) if preset_name else None
+        if preset_name and preset is None:
+            return web.json_response({"error": f"unknown preset '{preset_name}'"}, status=400)
+
+        values = {**preset} if preset else {}
+        for field_name in (
+            "eq_bass_db", "eq_mid_db", "eq_treble_db", "reverb_wet", "reverb_size", "compressor_enabled"
+        ):
+            if field_name in body:
+                values[field_name] = body[field_name]
+
+        existing.eq_bass_db = float(values.get("eq_bass_db", existing.eq_bass_db))
+        existing.eq_mid_db = float(values.get("eq_mid_db", existing.eq_mid_db))
+        existing.eq_treble_db = float(values.get("eq_treble_db", existing.eq_treble_db))
+        existing.reverb_wet = float(values.get("reverb_wet", existing.reverb_wet))
+        existing.reverb_size = float(values.get("reverb_size", existing.reverb_size))
+        existing.compressor_enabled = bool(values.get("compressor_enabled", existing.compressor_enabled))
+        existing.effects_preset = preset_name or existing.effects_preset
+
+        updated = await db.update_room_effects(existing)
+        if updated:
+            await socket_server.update_room_effects(updated)
+            return web.json_response(updated.__dict__)
+        return web.json_response({"error": "not found"}, status=404)
 
     async def list_speakers(request: web.Request) -> web.Response:
         room_id = request.query.get("room_id")
@@ -186,6 +240,7 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
                 gain_db=existing.gain_db if existing else 0.0,
                 delay_ms=existing.delay_ms if existing else 0.0,
                 extra_delay_ms=existing.extra_delay_ms if existing else 0.0,
+                air_cutoff_hz=existing.air_cutoff_hz if existing else 20000.0,
                 volume=existing.volume if existing else 50,
             )
             await db.upsert_speaker(speaker)
@@ -209,8 +264,13 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
             speaker = await db.get_speaker(speaker_id)
         return web.json_response({**speaker.__dict__, "status": speaker.status.value})
 
+    async def list_effects_presets(request: web.Request) -> web.Response:
+        return web.json_response(EFFECTS_PRESETS)
+
     app.router.add_get("/api/rooms", list_rooms)
     app.router.add_post("/api/rooms", upsert_room)
+    app.router.add_post("/api/rooms/{room_id}/effects", set_room_effects)
+    app.router.add_get("/api/effects/presets", list_effects_presets)
     app.router.add_get("/api/speakers", list_speakers)
     app.router.add_post("/api/speakers/{speaker_id}/position", update_speaker_position)
     app.router.add_post("/api/speakers/{speaker_id}/calibration", set_speaker_calibration)
@@ -267,7 +327,7 @@ def create_app() -> web.Application:
 
     pubsub.attach_routes(app, path="/ws")
     socket_server.attach_routes(app)
-    _build_rest_api(app, db, dsp)
+    _build_rest_api(app, db, dsp, socket_server)
     app.router.add_static("/", WWW_DIR, show_index=True)
 
     _seen_artwork: dict[str, str] = {}
