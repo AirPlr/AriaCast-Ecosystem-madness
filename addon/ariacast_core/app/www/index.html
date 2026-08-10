@@ -86,6 +86,14 @@
   }
   .room-item.active small { color: #05222e; }
   .room-item small { opacity: 0.7; font-weight: 500; font-size: 0.72rem; }
+  .room-delete {
+    padding: 2px 8px;
+    margin-left: 6px;
+    font-size: 0.9rem;
+    line-height: 1;
+    opacity: 0.6;
+  }
+  .room-delete:hover { opacity: 1; background: #e53935; color: #fff; border-color: #e53935; }
 
   button {
     background: var(--panel-2);
@@ -351,8 +359,16 @@ function renderRoomList() {
     const div = document.createElement('div');
     div.className = 'room-item' + (room.id === activeRoomId ? ' active' : '');
     const count = state.speakers.filter((s) => s.room_id === room.id).length;
-    div.innerHTML = `<span>${room.name}</span><small>${count} spk</small>`;
-    div.onclick = () => { activeRoomId = room.id; renderAll(); };
+    div.innerHTML = `<span>${room.name}</span><small>${count} spk</small><button class="room-delete" title="Delete room">&times;</button>`;
+    div.querySelector('span').onclick = div.querySelector('small').onclick = () => { activeRoomId = room.id; renderAll(); };
+    div.querySelector('.room-delete').onclick = async (evt) => {
+      evt.stopPropagation();
+      if (!confirm(`Delete room "${room.name}"? Any speakers in it will be unassigned, not deleted.`)) return;
+      await api('DELETE', `/api/rooms/${room.id}`);
+      state.rooms = state.rooms.filter((r) => r.id !== room.id);
+      if (activeRoomId === room.id) activeRoomId = state.rooms[0]?.id || null;
+      renderAll();
+    };
     el.appendChild(div);
   });
 }

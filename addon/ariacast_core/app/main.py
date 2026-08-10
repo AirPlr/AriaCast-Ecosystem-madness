@@ -105,7 +105,17 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
     async def upsert_room(request: web.Request) -> web.Response:
         body = await request.json()
         ha_area_id = body.get("ha_area_id")
-        existing = await db.get_room_by_ha_area_id(ha_area_id) if (ha_area_id and not body.get("id")) else None
+        existing = None
+        if ha_area_id and not body.get("id"):
+            existing = await db.get_room_by_ha_area_id(ha_area_id)
+            if existing is None:
+                # No room already tracks this HA area, but a same-named
+                # ha_area_id-less room might be a pre-HA-Mode orphan (Web UI
+                # room, or a leftover duplicate from a past bug) rather than
+                # a genuinely distinct room — adopt it instead of minting a
+                # new row, so orphans self-heal on the next sync instead of
+                # piling up indefinitely.
+                existing = await db.get_orphan_room_by_name(body["name"])
         room = Room(
             id=body.get("id") or (existing.id if existing else db.new_id()),
             name=body["name"],
@@ -115,6 +125,10 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
         )
         await db.upsert_room(room)
         return web.json_response(room.__dict__)
+
+    async def delete_room(request: web.Request) -> web.Response:
+        await db.delete_room(request.match_info["room_id"])
+        return web.json_response({"ok": True})
 
     async def list_speakers(request: web.Request) -> web.Response:
         room_id = request.query.get("room_id")
@@ -211,6 +225,7 @@ def _build_rest_api(app: web.Application, db: DatabaseService, dsp: RoomSpatialA
 
     app.router.add_get("/api/rooms", list_rooms)
     app.router.add_post("/api/rooms", upsert_room)
+    app.router.add_delete("/api/rooms/{room_id}", delete_room)
     app.router.add_get("/api/speakers", list_speakers)
     app.router.add_post("/api/speakers/{speaker_id}/position", update_speaker_position)
     app.router.add_post("/api/speakers/{speaker_id}/calibration", set_speaker_calibration)
