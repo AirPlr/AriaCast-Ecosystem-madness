@@ -161,6 +161,20 @@ class DatabaseService:
         row = await cur.fetchone()
         return Room(**dict(row)) if row else None
 
+    async def get_orphan_room_by_name(self, name: str) -> Optional[Room]:
+        """A room with no `ha_area_id` that happens to share an HA area's
+        name — most often a pre-HA-Mode room created directly in the Web UI,
+        or a leftover from a past bug that minted duplicates without an id.
+        `_sync_areas` adopts this row (sets its ha_area_id) instead of
+        minting a new one, so a stray orphan self-heals on the next sync
+        rather than accumulating forever."""
+        assert self._db is not None
+        cur = await self._db.execute(
+            "SELECT * FROM rooms WHERE name = ? AND ha_area_id IS NULL LIMIT 1", (name,)
+        )
+        row = await cur.fetchone()
+        return Room(**dict(row)) if row else None
+
     async def list_rooms(self) -> list[Room]:
         assert self._db is not None
         cur = await self._db.execute("SELECT * FROM rooms ORDER BY name")
