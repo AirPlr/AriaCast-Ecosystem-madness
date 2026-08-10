@@ -32,6 +32,18 @@ logger = logging.getLogger(__name__)
 SYNC_INTERVAL_S = 60
 _UNAVAILABLE_STATES = {"unavailable", "unknown", "none"}
 
+# HA's `light.ColorMode` values that actually accept an arbitrary RGB-ish
+# color (as opposed to "onoff"/"brightness"/"color_temp"/"white", which
+# don't). AlbumArtHueSync only ever calls light.turn_on with rgb_color, so a
+# light that can't take one isn't a usable ambient-sync target — no point
+# tracking it here at all.
+_RGB_CAPABLE_COLOR_MODES = {"hs", "rgb", "rgbw", "rgbww", "xy"}
+
+
+def _is_rgb_capable(state: State) -> bool:
+    supported = state.attributes.get("supported_color_modes") or []
+    return any(mode in _RGB_CAPABLE_COLOR_MODES for mode in supported)
+
 
 def _entity_area_id(hass: HomeAssistant, entity_id: str) -> str | None:
     ent_reg = er.async_get(hass)
@@ -145,6 +157,8 @@ class HaBridgeSync:
 
     async def _sync_lights(self) -> None:
         for state in self.hass.states.async_all("light"):
+            if not _is_rgb_capable(state):
+                continue  # can't album-art-sync a light that can't take an RGB color
             area_id = _entity_area_id(self.hass, state.entity_id)
             room_id = self._room_ids_by_area.get(area_id) if area_id else None
             if not room_id:
