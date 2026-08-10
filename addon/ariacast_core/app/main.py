@@ -59,31 +59,6 @@ HA_API_BASE = os.environ.get("HA_API_BASE", "http://supervisor/core/api")
 PUBLIC_BASE_URL = os.environ.get("ARIACAST_PUBLIC_URL", "")
 
 
-async def _call_ha_service(domain: str, service: str, entity_id: str, params: dict) -> None:
-    if not SUPERVISOR_TOKEN:
-        logger.debug("No HA token available; skipping %s.%s for %s", domain, service, entity_id)
-        return
-    import aiohttp
-
-    headers = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}", "Content-Type": "application/json"}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            f"{HA_API_BASE}/services/{domain}/{service}",
-            headers=headers,
-            json={"entity_id": entity_id, **params},
-            timeout=aiohttp.ClientTimeout(total=5),
-        ) as resp:
-            if resp.status >= 300:
-                logger.warning("%s.%s call for %s failed: HTTP %s", domain, service, entity_id, resp.status)
-
-
-async def _call_light_service(entity_id: str, params: dict) -> None:
-    await _call_ha_service("light", "turn_on", entity_id, params)
-
-
-async def _call_media_service(entity_id: str, service: str, params: dict) -> None:
-    await _call_ha_service("media_player", service, entity_id, params)
-
 # Recompute DSP for the actively-tracked room this often, in addition to the
 # event-driven recompute triggered by listener movement / node transitions.
 DSP_TICK_S = 2.0
@@ -285,6 +260,46 @@ def create_app() -> web.Application:
     node_manager = SpeakerNodeManager(db)
     dsp = RoomSpatialAudioDSP(db)
     pubsub = PubSubServer(db)
+
+    async def _call_ha_service(domain: str, service: str, entity_id: str, params: dict) -> None:
+        if SUPERVISOR_TOKEN:
+            import aiohttp
+
+            headers = {"Authorization": f"Bearer {SUPERVISOR_TOKEN}", "Content-Type": "application/json"}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{HA_API_BASE}/services/{domain}/{service}",
+                    headers=headers,
+                    json={"entity_id": entity_id, **params},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status >= 300:
+                        logger.warning("%s.%s call for %s failed: HTTP %s", domain, service, entity_id, resp.status)
+            return
+
+        # No SUPERVISOR_TOKEN/HA_TOKEN configured — the normal case for a
+        # standalone deployment that'd rather not manage a long-lived access
+        # token at all. Relay the request over the same pubsub WebSocket the
+        # Web UI/app already connect to; the HACS integration
+        # (ha_action_relay.py) connects to it too and executes it via
+        # hass.services.async_call directly, since it already runs inside HA
+        # Core and needs no credential of its own to do that.
+        if pubsub.client_count == 0:
+            logger.debug(
+                "No HA token and no action-relay client connected; %s.%s for %s was dropped",
+                domain, service, entity_id,
+            )
+        await pubsub.broadcast({
+            "type": "ha_action", "domain": domain, "service": service,
+            "entity_id": entity_id, "params": params,
+        })
+
+    async def _call_light_service(entity_id: str, params: dict) -> None:
+        await _call_ha_service("light", "turn_on", entity_id, params)
+
+    async def _call_media_service(entity_id: str, service: str, params: dict) -> None:
+        await _call_ha_service("media_player", service, entity_id, params)
+
     socket_server = AriaCastSocketServer(
         db, node_manager, call_media_service=_call_media_service, public_base_url=PUBLIC_BASE_URL
     )

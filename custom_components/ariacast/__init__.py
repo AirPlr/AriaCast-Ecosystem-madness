@@ -19,6 +19,7 @@ from .const import (
     CONF_HA_MODE,
     DATA_DB,
     DATA_DSP,
+    DATA_HA_ACTION_RELAY,
     DATA_HA_BRIDGE_SYNC,
     DATA_HUE_SYNC,
     DATA_NODE_MANAGER,
@@ -31,6 +32,7 @@ from .const import (
     SERVICE_SYNC_HA_AREAS,
 )
 from .coordinator import AriaCastCoordinator
+from .ha_action_relay import HaActionRelay
 from .ha_bridge_sync import HaBridgeSync
 from .core.database import DatabaseService
 from .core.dsp import RoomSpatialAudioDSP
@@ -101,6 +103,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         bridge_sync.start()
         hass.data[DOMAIN][entry.entry_id][DATA_HA_BRIDGE_SYNC] = bridge_sync
 
+        action_relay = HaActionRelay(hass, addon_base_url)
+        action_relay.start()
+        hass.data[DOMAIN][entry.entry_id][DATA_HA_ACTION_RELAY] = action_relay
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _register_services(hass, db, dsp)
     return True
@@ -113,6 +119,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         bridge_sync = data.get(DATA_HA_BRIDGE_SYNC)
         if bridge_sync:
             bridge_sync.stop()
+        action_relay = data.get(DATA_HA_ACTION_RELAY)
+        if action_relay:
+            action_relay.stop()
         await data[DATA_NODE_MANAGER].stop()
         await data[DATA_PUBSUB].stop()
         await data[DATA_DB].stop()
