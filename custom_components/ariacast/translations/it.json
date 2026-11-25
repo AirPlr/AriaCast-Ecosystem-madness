@@ -1,0 +1,28 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Aggiungi un ricevitore AriaCast",
+        "description": "I ricevitori nella tua rete vengono trovati da soli. Usa questo se il tuo è su un'altra rete o non è stato trovato.",
+        "data": {
+          "host": "Indirizzo",
+          "port": "Porta"
+        },
+        "data_description": {
+          "host": "Indirizzo del dispositivo con AriaCast, per esempio 192.168.1.20.",
+          "port": "AriaCast usa 12889 se non l'hai cambiata."
+        }
+      },
+      "zeroconf_confirm": {
+        "description": "Aggiungere {name} a Home Assistant?"
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossibile connettersi"
+    },
+    "abort": {
+      "already_configured": "Il dispositivo è già configurato"
+    }
+  }
+}
