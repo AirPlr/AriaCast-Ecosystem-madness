@@ -1,19 +1,5 @@
 __pycache__/
 *.pyc
+.venv/
+.pytest_cache/
 .DS_Store
-
-# Staged by scripts/build_addon.sh from custom_components/ariacast/core.
-# Committed (not ignored) so the Supervisor add-on store can build this
-# add-on directly from a git clone, since it can't run the staging script
-# itself — re-run scripts/build_addon.sh after touching custom_components/
-# ariacast/core to keep the two copies in sync before committing.
-
-# Local SQLite DBs
-*.db
-*.db-journal
-
-# Android / Gradle build output vendored from source repos
-repos/**/build/
-repos/**/.gradle/
-repos/**/app/release/
-repos/**/*.iml
